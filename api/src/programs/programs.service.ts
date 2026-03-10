@@ -1,4 +1,3 @@
-// src/programs/programs.service.ts
 import {
   BadRequestException,
   ConflictException,
@@ -111,7 +110,123 @@ export class ProgramsService {
     }
   }
 
+  private async ensureGenericTemplateHasDefaults(templateId: string, templateCode: string) {
+    if (templateCode !== "GENERIC") {
+      return;
+    }
+
+    const existingTemplate = await this.prisma.curriculumTemplate.findUnique({
+      where: { id: templateId },
+      include: {
+        grades: {
+          include: {
+            subjects: true,
+          },
+        },
+        subjects: true,
+      },
+    });
+
+    if (!existingTemplate) {
+      throw new NotFoundException("Template not found");
+    }
+
+    const hasGrades = existingTemplate.grades.length > 0;
+    const hasSubjects = existingTemplate.subjects.length > 0;
+
+    if (hasGrades && hasSubjects) {
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      let templateSubjects = existingTemplate.subjects;
+
+      if (!hasSubjects) {
+        const defaultSubjects = [
+          { name: "English", code: "ENG", isCore: true },
+          { name: "Mathematics", code: "MATH", isCore: true },
+          { name: "Science", code: "SCI", isCore: true },
+          { name: "Kiswahili", code: "KIS", isCore: true },
+          { name: "Social Studies", code: "SST", isCore: true },
+        ];
+
+        for (const subject of defaultSubjects) {
+          await tx.curriculumTemplateSubject.create({
+            data: {
+              templateId,
+              name: subject.name,
+              code: subject.code,
+              isCore: subject.isCore,
+            },
+          });
+        }
+
+        templateSubjects = await tx.curriculumTemplateSubject.findMany({
+          where: { templateId },
+          orderBy: { name: "asc" },
+        });
+      }
+
+      if (!hasGrades) {
+        const defaultGrades = [
+          { name: "Grade 1", order: 1, stage: "Primary" },
+          { name: "Grade 2", order: 2, stage: "Primary" },
+          { name: "Grade 3", order: 3, stage: "Primary" },
+          { name: "Grade 4", order: 4, stage: "Primary" },
+          { name: "Grade 5", order: 5, stage: "Primary" },
+          { name: "Grade 6", order: 6, stage: "Primary" },
+          { name: "Grade 7", order: 7, stage: "Primary" },
+          { name: "Grade 8", order: 8, stage: "Primary" },
+        ];
+
+        for (const grade of defaultGrades) {
+          const createdGrade = await tx.curriculumTemplateGrade.create({
+            data: {
+              templateId,
+              name: grade.name,
+              order: grade.order,
+              stage: grade.stage as any,
+            },
+          });
+
+          for (const subject of templateSubjects) {
+            await tx.curriculumTemplateGradeSubject.create({
+              data: {
+                gradeId: createdGrade.id,
+                subjectId: subject.id,
+              },
+            });
+          }
+        }
+      }
+    });
+  }
+
   async seedProgram(schoolId: string, programId: string) {
+    const baseProgram = await this.prisma.schoolProgram.findFirst({
+      where: { id: programId, schoolId },
+      select: {
+        id: true,
+        templateId: true,
+        template: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!baseProgram) {
+      throw new NotFoundException("Program not found");
+    }
+
+    await this.ensureGenericTemplateHasDefaults(
+      baseProgram.templateId,
+      baseProgram.template.code
+    );
+
     const program = await this.prisma.schoolProgram.findFirst({
       where: { id: programId, schoolId },
       include: {
@@ -142,6 +257,12 @@ export class ProgramsService {
 
     if (alreadySeeded) {
       throw new BadRequestException("Program already seeded");
+    }
+
+    if (program.template.grades.length === 0) {
+      throw new BadRequestException(
+        "Template has no grades. Add template grades before seeding."
+      );
     }
 
     await this.prisma.$transaction(async (tx) => {
