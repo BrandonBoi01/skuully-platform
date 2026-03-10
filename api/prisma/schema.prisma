@@ -1,0 +1,900 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//
+// ===============================
+// ENUMS
+// ===============================
+//
+
+enum SchoolRole {
+  OWNER
+  ADMIN
+  TEACHER
+  ACCOUNTANT
+  HR
+}
+
+enum OrgRole {
+  ORG_OWNER
+  ORG_ADMIN
+  ORG_VIEWER
+}
+
+enum BranchRole {
+  BRANCH_ADMIN
+  BRANCH_VIEWER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum AttendanceSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AttendancePersonType {
+  STUDENT
+  STAFF
+  VISITOR
+}
+
+enum AttendanceEventType {
+  // presence
+  CHECK_IN
+  CHECK_OUT
+
+  // optional smart signals
+  IN_CLASS
+  OUT_CLASS
+
+  // transport
+  BOARD_BUS
+  ALIGHT_BUS
+
+  // excuses / workflow
+  EXCUSE_REQUESTED
+  EXCUSE_APPROVED
+  EXCUSE_REJECTED
+  EXCUSE_CANCELLED
+
+  // boarding / leave-outs
+  LEAVE_OUT_REQUESTED
+  LEAVE_OUT_GRANTED
+  LEAVE_OUT_REJECTED
+  LEAVE_OUT_RETURNED
+  LEAVE_OUT_CANCELLED
+
+  // visitors
+  VISITOR_CHECK_IN
+  VISITOR_CHECK_OUT
+}
+
+enum AttendanceSource {
+  MANUAL
+  TEACHER_ROLLCALL
+  QR
+  GATE_SCANNER
+  GEOFENCE
+  WATCH
+  BUS
+  PARENT_APP
+  STUDENT_APP
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum StaffType {
+  TEACHING
+  NON_TEACHING
+}
+
+enum StaffEngagement {
+  FULL_TIME
+  PART_TIME
+  CONTRACTOR
+  VISITING
+}
+
+enum AttendanceMode {
+  DAILY
+  SESSION
+}
+
+enum AttendanceSessionType {
+  CLASS_ROLLCALL
+  LESSON
+  STAFF_SESSION
+}
+
+enum DailyAttendanceComputedFrom {
+  MANUAL
+  EVENTS
+  MIXED
+}
+
+enum DailyAttendanceChangeType {
+  STATUS
+  LOCK
+  UNLOCK
+  TIMES
+  SYSTEM
+}
+
+//
+// ===============================
+// ORG + BRANCH (MULTI-SCHOOL)
+// ===============================
+//
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches Branch[]
+  schools  School[]
+  members  OrganizationMember[]
+}
+
+model Branch {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schools      School[]
+  members      BranchMember[]
+
+  @@unique([organizationId, name], name: "unique_org_branch_name")
+  @@index([organizationId])
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId], name: "unique_org_member")
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model BranchMember {
+  id        String     @id @default(cuid())
+  branchId  String
+  userId    String
+  role      BranchRole
+  createdAt DateTime   @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, userId], name: "unique_branch_member")
+  @@index([branchId])
+  @@index([userId])
+}
+
+//
+// ===============================
+// CORE: USERS + SCHOOLS
+// ===============================
+//
+
+model User {
+  id           String   @id @default(cuid())
+  fullName     String
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  skuullyId    String   @unique
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships        SchoolMembership[]
+  attendanceSessions AttendanceSession[]
+  attendanceMarks    AttendanceMark[]
+
+  // approvals / requests
+  excuseRequestsMade     ExcuseRequest[] @relation("ExcuseRequestedBy")
+  excuseRequestsReviewed ExcuseRequest[] @relation("ExcuseReviewedBy")
+  leaveOutsRequested     LeaveOutPass[]  @relation("LeaveOutRequestedBy")
+  leaveOutsApproved      LeaveOutPass[]  @relation("LeaveOutApprovedBy")
+
+  // staff linkage (optional)
+  staffProfiles     Staff[]            @relation("StaffUser")
+  staffSessionMarks StaffSessionMark[] @relation("StaffSessionMarkedBy")
+
+  // daily lock relation
+  dailyAttendancesLocked DailyAttendance[] @relation("DailyAttendanceLockedBy")
+
+  // daily change log actor relation
+  dailyAttendanceChanges DailyAttendanceChange[] @relation("DailyAttendanceChangedBy")
+
+  visitorLogsCreated VisitorLog[] @relation("VisitorLogCreatedBy")
+  devicesCreated     Device[]     @relation("DeviceCreatedBy")
+
+  // org/branch memberships
+  orgMemberships    OrganizationMember[]
+  branchMemberships BranchMember[]
+}
+
+model School {
+  id         String  @id @default(cuid())
+  name       String
+  country    String  @default("Kenya")
+  county     String?
+  curriculum String?
+  logoUrl    String?
+
+  // multi-school structure (optional)
+  organizationId String?
+  branchId       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+
+  members  SchoolMembership[]
+  invites  SchoolInvite[]
+  programs SchoolProgram[]
+
+  students Student[]
+  staff    Staff[]
+
+  attendanceSessions AttendanceSession[]
+  attendanceEvents   AttendanceEvent[]
+  dailyAttendances   DailyAttendance[]
+  dailyAttendanceChanges DailyAttendanceChange[]
+
+  // smart ops
+  devices        Device[]
+  visitors       Visitor[]
+  visitorLogs    VisitorLog[]
+  excuseRequests ExcuseRequest[]
+  leaveOutPasses LeaveOutPass[]
+
+  @@index([organizationId])
+  @@index([branchId])
+}
+
+model SchoolMembership {
+  id        String     @id @default(cuid())
+  userId    String
+  schoolId  String
+  role      SchoolRole
+  status    String     @default("ACTIVE")
+  createdAt DateTime   @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, schoolId], name: "userId_schoolId")
+  @@index([schoolId])
+  @@index([userId])
+}
+
+model SchoolInvite {
+  id        String     @id @default(cuid())
+  schoolId  String
+  email     String
+  role      SchoolRole
+  code      String     @unique
+  status    String     @default("PENDING")
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([email])
+}
+
+//
+// ===============================
+// CURRICULUM TEMPLATES (GLOBAL)
+// ===============================
+//
+
+model CurriculumTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  grades        CurriculumTemplateGrade[]
+  subjects      CurriculumTemplateSubject[]
+  programs      SchoolProgram[]
+  studentFields TemplateStudentField[]
+}
+
+model CurriculumTemplateGrade {
+  id         String  @id @default(cuid())
+  templateId String
+  name       String
+  order      Int
+  stage      String?
+
+  template CurriculumTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  subjects CurriculumTemplateGradeSubject[]
+
+  @@unique([templateId, order])
+  @@index([templateId])
+}
+
+model CurriculumTemplateSubject {
+  id         String  @id @default(cuid())
+  templateId String
+  name       String
+  code       String?
+  isCore     Boolean @default(true)
+
+  template CurriculumTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  grades   CurriculumTemplateGradeSubject[]
+
+  @@unique([templateId, name])
+  @@index([templateId])
+}
+
+model CurriculumTemplateGradeSubject {
+  id        String @id @default(cuid())
+  gradeId   String
+  subjectId String
+
+  grade   CurriculumTemplateGrade   @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  subject CurriculumTemplateSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([gradeId, subjectId])
+  @@index([gradeId])
+  @@index([subjectId])
+}
+
+//
+// ======================================
+// SCHOOL PROGRAMS (INSTALLED CURRICULA)
+// ======================================
+//
+
+model SchoolProgram {
+  id         String   @id @default(cuid())
+  schoolId   String
+  templateId String
+  name       String
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  school   School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  template CurriculumTemplate @relation(fields: [templateId], references: [id])
+
+  grades             ProgramGrade[]
+  classes            ProgramClass[]
+  subjects           ProgramSubject[]
+  students           Student[]
+  staff              Staff[]
+  attendanceSessions AttendanceSession[]
+
+  excuseRequests ExcuseRequest[]
+  leaveOutPasses LeaveOutPass[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([templateId])
+}
+
+model ProgramGrade {
+  id              String  @id @default(cuid())
+  programId       String
+  templateGradeId String?
+  name            String
+  order           Int
+  stage           String?
+
+  program  SchoolProgram         @relation(fields: [programId], references: [id], onDelete: Cascade)
+  subjects ProgramGradeSubject[]
+  classes  ProgramClass[]
+
+  @@unique([programId, order])
+  @@index([programId])
+}
+
+model ProgramClass {
+  id        String   @id @default(cuid())
+  programId String
+  gradeId   String
+  name      String
+  createdAt DateTime @default(now())
+
+  program SchoolProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  grade   ProgramGrade  @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+
+  students           Student[]
+  attendanceSessions AttendanceSession[]
+
+  @@unique([programId, name])
+  @@index([programId])
+  @@index([gradeId])
+}
+
+model ProgramSubject {
+  id                String  @id @default(cuid())
+  programId         String
+  templateSubjectId String?
+  name              String
+  code              String?
+  isCore            Boolean @default(true)
+
+  program SchoolProgram         @relation(fields: [programId], references: [id], onDelete: Cascade)
+  grades  ProgramGradeSubject[]
+
+  @@unique([programId, name])
+  @@index([programId])
+}
+
+model ProgramGradeSubject {
+  id        String @id @default(cuid())
+  gradeId   String
+  subjectId String
+
+  grade   ProgramGrade   @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  subject ProgramSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([gradeId, subjectId])
+  @@index([gradeId])
+  @@index([subjectId])
+}
+
+//
+// ===============================
+// STUDENTS + DYNAMIC FIELDS
+// ===============================
+//
+
+model Student {
+  id          String    @id @default(cuid())
+  schoolId    String
+  programId   String
+  classId     String?
+  admissionNo String?
+  fullName    String
+  gender      String?
+  dob         DateTime?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  school  School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  program SchoolProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  class   ProgramClass? @relation(fields: [classId], references: [id])
+
+  fields          StudentFieldValue[]
+  attendanceMarks AttendanceMark[]
+
+  excuseRequests ExcuseRequest[]
+  leaveOutPasses LeaveOutPass[]
+
+  @@unique([schoolId, admissionNo], name: "schoolId_admissionNo")
+  @@index([schoolId])
+  @@index([programId])
+  @@index([classId])
+}
+
+model TemplateStudentField {
+  id          String   @id @default(cuid())
+  templateId  String
+  key         String
+  label       String
+  type        String   @default("STRING")
+  required    Boolean  @default(false)
+  uniqueScope String?
+  optionsJson String?
+  createdAt   DateTime @default(now())
+
+  template           CurriculumTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  studentFieldValues StudentFieldValue[]
+
+  @@unique([templateId, key])
+  @@index([templateId])
+}
+
+model StudentFieldValue {
+  id        String   @id @default(cuid())
+  studentId String
+  fieldId   String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  field   TemplateStudentField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, fieldId])
+  @@index([studentId])
+  @@index([fieldId])
+}
+
+//
+// ===============================
+// STAFF
+// ===============================
+//
+
+model Staff {
+  id        String  @id @default(cuid())
+  schoolId  String
+  programId String?
+  userId    String?
+
+  fullName String
+  phone    String?
+  email    String?
+  staffNo  String?
+
+  staffType      StaffType       @default(NON_TEACHING)
+  engagement     StaffEngagement @default(FULL_TIME)
+  attendanceMode AttendanceMode  @default(DAILY)
+
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school  School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  program SchoolProgram? @relation(fields: [programId], references: [id])
+  user    User?          @relation("StaffUser", fields: [userId], references: [id])
+
+  sessionMarks StaffSessionMark[]
+
+  @@unique([schoolId, staffNo], name: "unique_school_staffNo")
+  @@index([schoolId])
+  @@index([programId])
+  @@index([userId])
+  @@index([status])
+}
+
+//
+// ===============================
+// ATTENDANCE (SESSIONS + MARKS + EVENTS + DAILY SUMMARY + CHANGE LOG)
+// ===============================
+//
+
+model AttendanceSession {
+  id         String                  @id @default(cuid())
+  schoolId   String
+  programId  String
+  classId    String
+  date       DateTime
+  periodName String?
+  status     AttendanceSessionStatus @default(OPEN)
+
+  sessionType AttendanceSessionType @default(CLASS_ROLLCALL)
+
+  createdById String
+  createdAt   DateTime  @default(now())
+  closedAt    DateTime?
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  program   SchoolProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  class     ProgramClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdBy User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  marks      AttendanceMark[]
+  staffMarks StaffSessionMark[]
+
+  @@unique([classId, date, periodName], name: "unique_class_day_period")
+  @@index([schoolId, programId, classId, date])
+  @@index([sessionType])
+}
+
+model AttendanceMark {
+  id         String           @id @default(cuid())
+  sessionId  String
+  studentId  String
+  status     AttendanceStatus
+  note       String?
+  markedById String
+  markedAt   DateTime         @default(now())
+
+  session  AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student  Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  markedBy User              @relation(fields: [markedById], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId], name: "unique_mark_per_session_student")
+  @@index([studentId])
+  @@index([sessionId])
+}
+
+model StaffSessionMark {
+  id         String           @id @default(cuid())
+  sessionId  String
+  staffId    String
+  status     AttendanceStatus
+  note       String?
+  markedById String?
+  markedAt   DateTime         @default(now())
+
+  session  AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  staff    Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  markedBy User?             @relation("StaffSessionMarkedBy", fields: [markedById], references: [id])
+
+  @@unique([sessionId, staffId], name: "unique_staff_mark_per_session")
+  @@index([sessionId])
+  @@index([staffId])
+}
+
+model AttendanceEvent {
+  id         String               @id @default(cuid())
+  schoolId   String
+  programId  String?
+  personType AttendancePersonType
+  personId   String
+  eventType  AttendanceEventType
+  source     AttendanceSource
+  occurredAt DateTime
+  metaJson   Json?
+
+  deviceId  String?
+  createdAt DateTime @default(now())
+
+  school School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([schoolId, occurredAt])
+  @@index([personType, personId, occurredAt])
+  @@index([deviceId])
+}
+
+model DailyAttendance {
+  id         String               @id @default(cuid())
+  schoolId   String
+  programId  String?
+  personType AttendancePersonType
+  personId   String
+  date       DateTime
+
+  // final truth for the day (single answer)
+  status        AttendanceStatus
+  firstIn       DateTime?
+  lastOut       DateTime?
+  minutesOnSite Int                      @default(0)
+  computedFrom  DailyAttendanceComputedFrom @default(MANUAL)
+
+  // Lock + governance
+  isLocked       Boolean           @default(false)
+  lockedAt       DateTime?
+  lockedByUserId String?
+  lockedByRole   SchoolRole?
+  lockedSource   AttendanceSource?
+
+  // governance counters
+  declaredCount   Int @default(0) // total status changes applied
+  manualEditCount Int @default(0)
+  undeclaredCount Int @default(0)
+
+  lastDeclaredAt           DateTime?
+  lastDeclaredByUserId     String?
+  lastManualEditedAt       DateTime?
+  lastManualEditedByUserId String?
+  lastUndeclaredAt         DateTime?
+  lastUndeclaredByUserId   String?
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  lockedBy User? @relation("DailyAttendanceLockedBy", fields: [lockedByUserId], references: [id])
+
+  // audit log (append-only)
+  changes DailyAttendanceChange[]
+
+  @@unique([personType, personId, date], name: "unique_daily_person_date")
+  @@index([schoolId, date])
+  @@index([programId, date])
+}
+
+model DailyAttendanceChange {
+  id String @id @default(cuid())
+
+  dailyAttendanceId String
+  schoolId          String
+  programId         String?
+
+  personType AttendancePersonType
+  personId   String
+  date       DateTime
+
+  fromStatus AttendanceStatus?
+  toStatus   AttendanceStatus
+
+  changeType DailyAttendanceChangeType @default(STATUS)
+
+  changedByUserId String?
+  changedByRole   SchoolRole?
+  source          AttendanceSource
+  reason          String?
+
+  createdAt DateTime @default(now())
+
+  dailyAttendance DailyAttendance @relation(fields: [dailyAttendanceId], references: [id], onDelete: Cascade)
+  changedBy       User?           @relation("DailyAttendanceChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  school          School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, date])
+  @@index([personType, personId, date])
+  @@index([dailyAttendanceId])
+  @@index([changedByUserId])
+}
+
+//
+// ===============================
+// SMART REQUESTS: EXCUSES + LEAVE-OUTS
+// ===============================
+//
+
+model ExcuseRequest {
+  id        String  @id @default(cuid())
+  schoolId  String
+  programId String?
+  studentId String
+
+  dateFrom DateTime
+  dateTo   DateTime
+  reason   String?
+  status   ApprovalStatus @default(PENDING)
+
+  requestedByUserId String?
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+
+  metaJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school  School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  program SchoolProgram? @relation(fields: [programId], references: [id])
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  requestedBy User? @relation("ExcuseRequestedBy", fields: [requestedByUserId], references: [id])
+  reviewedBy  User? @relation("ExcuseReviewedBy", fields: [reviewedByUserId], references: [id])
+
+  @@index([schoolId, studentId, dateFrom])
+  @@index([programId, status])
+  @@index([status])
+}
+
+model LeaveOutPass {
+  id        String  @id @default(cuid())
+  schoolId  String
+  programId String?
+  studentId String
+
+  reason String?
+  status ApprovalStatus @default(PENDING)
+
+  grantedAt        DateTime?
+  expectedReturnAt DateTime?
+  returnedAt       DateTime?
+
+  requestedByUserId String?
+  approvedByUserId  String?
+
+  metaJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school  School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  program SchoolProgram? @relation(fields: [programId], references: [id])
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  requestedBy User? @relation("LeaveOutRequestedBy", fields: [requestedByUserId], references: [id])
+  approvedBy  User? @relation("LeaveOutApprovedBy", fields: [approvedByUserId], references: [id])
+
+  @@index([schoolId, studentId])
+  @@index([programId, status])
+  @@index([status])
+}
+
+//
+// ===============================
+// DEVICES + VISITORS (GATE OPS)
+// ===============================
+//
+
+model Device {
+  id              String  @id @default(cuid())
+  schoolId        String
+  name            String
+  type            String
+  status          String  @default("ACTIVE")
+  apiKeyHash      String?
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school    School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("DeviceCreatedBy", fields: [createdByUserId], references: [id])
+
+  events      AttendanceEvent[]
+  visitorLogs VisitorLog[]
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+model Visitor {
+  id        String   @id @default(cuid())
+  schoolId  String
+  fullName  String
+  idType    String?
+  idNumber  String?
+  phone     String?
+  company   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  logs   VisitorLog[]
+
+  @@index([schoolId])
+  @@index([idNumber])
+}
+
+model VisitorLog {
+  id        String @id @default(cuid())
+  schoolId  String
+  visitorId String
+
+  purpose      String?
+  checkedInAt  DateTime  @default(now())
+  checkedOutAt DateTime?
+
+  createdByUserId String?
+  deviceId        String?
+
+  metaJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("VisitorLogCreatedBy", fields: [createdByUserId], references: [id])
+  device    Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([schoolId, checkedInAt])
+  @@index([visitorId])
+  @@index([deviceId])
+}
