@@ -1,4 +1,3 @@
-// src/main.ts
 import "dotenv/config";
 
 import { ValidationPipe } from "@nestjs/common";
@@ -7,25 +6,38 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 import { AppModule } from "./app.module";
 
 function parseCorsOrigins(raw?: string): string[] {
+  const defaults = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    "https://skuully.app",
+    "https://www.skuully.app",
+    "https://api.skuully.app",
+  ];
+
   if (!raw?.trim()) {
-    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"];
+    return defaults;
   }
 
-  return raw
+  const configured = raw
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  return Array.from(new Set([...defaults, ...configured]));
 }
 
 async function bootstrap() {
   if (!process.env.DATABASE_URL) {
     console.warn(
-      "⚠️ DATABASE_URL is not set. Prisma will fail to connect. Check your .env file."
+      "⚠️ DATABASE_URL is not set. Prisma will fail to connect. Check your environment variables."
     );
   }
 
   if (!process.env.JWT_SECRET) {
-    console.warn("⚠️ JWT_SECRET is not set. Auth will fail. Check your .env file.");
+    console.warn(
+      "⚠️ JWT_SECRET is not set. Auth will fail. Check your environment variables."
+    );
   }
 
   const app = await NestFactory.create(AppModule, {
@@ -36,7 +48,6 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // allow server-to-server tools / curl / Postman / mobile clients without browser origin
       if (!origin) {
         return callback(null, true);
       }
@@ -74,8 +85,8 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
 
-  console.log(`✅ API running on http://localhost:${port}`);
-  console.log(`✅ CORS origins: ${allowedOrigins.join(", ")}`);
+  console.log(`✅ API running on port ${port}`);
+  console.log(`✅ Allowed CORS origins: ${allowedOrigins.join(", ")}`);
 }
 
 bootstrap();
