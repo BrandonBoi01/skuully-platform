@@ -1,4 +1,3 @@
-// src/auth/auth.service.ts
 import {
   BadRequestException,
   Injectable,
@@ -7,19 +6,23 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, SchoolRole } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 import { PrismaService } from "../prisma/prisma.service";
 import { UsersService } from "../users/users.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { VerifyEmailDto } from "./dto/verify-email.dto";
+import { ResendVerificationCodeDto } from "./dto/resend-verification-code.dto";
+import { EmailService } from "./email.service";
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
-    private readonly jwt: JwtService
+    private readonly jwt: JwtService,
+    private readonly emailService: EmailService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -50,6 +53,7 @@ export class AuthService {
           fullName: true,
           email: true,
           skuullyId: true,
+          emailVerifiedAt: true,
         },
       });
 
@@ -112,11 +116,20 @@ export class AuthService {
       return { user, school, program };
     });
 
+    const verificationCode = await this.createEmailVerificationCode(result.user.id);
+    await this.emailService.sendVerificationCodeEmail({
+      to: result.user.email,
+      fullName: result.user.fullName,
+      code: verificationCode,
+    });
+
     const token = await this.jwt.signAsync({ sub: result.user.id });
 
     return {
-      message: "Registration successful",
+      message: "Registration successful. Verify your email to continue.",
       token,
+      requiresEmailVerification: true,
+      emailVerified: false,
       user: result.user,
       school: result.school,
       program: result.program,
@@ -144,12 +157,133 @@ export class AuthService {
 
     return {
       token,
+      requiresEmailVerification: !user.emailVerifiedAt,
+      emailVerified: !!user.emailVerifiedAt,
       user: {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
         skuullyId: user.skuullyId,
       },
+    };
+  }
+
+  async verifyEmail(dto: VerifyEmailDto) {
+    const email = dto.email.trim().toLowerCase();
+    const code = dto.code.trim();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException("Invalid verification request");
+    }
+
+    if (user.emailVerifiedAt) {
+      return {
+        message: "Email already verified",
+        emailVerified: true,
+      };
+    }
+
+    const record = await this.prisma.emailVerificationCode.findFirst({
+      where: {
+        userId: user.id,
+        code,
+        usedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!record) {
+      throw new BadRequestException("Invalid or expired verification code");
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationCode.update({
+        where: { id: record.id },
+        data: {
+          usedAt: new Date(),
+        },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerifiedAt: new Date(),
+        },
+      }),
+    ]);
+
+    await this.emailService.sendWelcomeEmail({
+      to: user.email,
+      fullName: user.fullName,
+    });
+
+    await this.emailService.sendSecurityEventEmail({
+      to: user.email,
+      fullName: user.fullName,
+      title: "Email verified",
+      details: [
+        "Your Skuully account email was successfully verified.",
+        `Time: ${new Date().toISOString()}`,
+      ],
+    });
+
+    return {
+      message: "Email verified successfully",
+      emailVerified: true,
+    };
+  }
+
+  async resendVerificationCode(dto: ResendVerificationCodeDto) {
+    const email = dto.email.trim().toLowerCase();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        message: "If that account exists, a verification code has been sent.",
+      };
+    }
+
+    if (user.emailVerifiedAt) {
+      return {
+        message: "Email is already verified.",
+        emailVerified: true,
+      };
+    }
+
+    const verificationCode = await this.createEmailVerificationCode(user.id);
+
+    await this.emailService.sendVerificationCodeEmail({
+      to: user.email,
+      fullName: user.fullName,
+      code: verificationCode,
+    });
+
+    return {
+      message: "Verification code sent",
+      emailVerified: false,
     };
   }
 
@@ -161,6 +295,7 @@ export class AuthService {
         fullName: true,
         email: true,
         skuullyId: true,
+        emailVerifiedAt: true,
         createdAt: true,
         memberships: {
           where: { status: "ACTIVE" },
@@ -185,7 +320,25 @@ export class AuthService {
       throw new UnauthorizedException("User not found");
     }
 
-    return user;
+    return {
+      ...user,
+      emailVerified: !!user.emailVerifiedAt,
+    };
+  }
+
+  private async createEmailVerificationCode(userId: string) {
+    const code = String(randomInt(100000, 1000000));
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.prisma.emailVerificationCode.create({
+      data: {
+        userId,
+        code,
+        expiresAt,
+      },
+    });
+
+    return code;
   }
 
   private async generateUniqueSkuullyId(

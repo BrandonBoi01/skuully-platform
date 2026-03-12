@@ -1,4 +1,3 @@
-// src/users/users.service.ts
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -15,6 +14,7 @@ export class UsersService {
         email: true,
         skuullyId: true,
         passwordHash: true,
+        emailVerifiedAt: true,
         createdAt: true,
       },
     });
@@ -28,6 +28,7 @@ export class UsersService {
         fullName: true,
         email: true,
         skuullyId: true,
+        emailVerifiedAt: true,
         createdAt: true,
       },
     });
