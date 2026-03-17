@@ -1,4 +1,3 @@
-// src/programs/programs.controller.ts
 import {
   Body,
   Controller,
@@ -6,14 +5,17 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { SchoolRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProgramContextGuard } from "../auth/program-context.guard";
 import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
 import { SchoolContextGuard } from "../auth/school-context.guard";
+import { setAccessCookie } from "../auth/auth-cookie.util";
 import { CreateProgramDto } from "./dto/create-program.dto";
 import { ProgramsService } from "./programs.service";
 
@@ -63,13 +65,20 @@ export class ProgramsController {
   @UseGuards(SchoolContextGuard, RolesGuard)
   @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
   @Post("programs/switch/:programId")
-  switchProgram(@Req() req: any, @Param("programId") programId: string) {
-    return this.programs.switchProgram(
+  async switchProgram(
+    @Req() req: any,
+    @Param("programId") programId: string,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.programs.switchProgram(
       req.user.userId,
       req.user.schoolId,
       req.user.role,
       programId
     );
+
+    setAccessCookie(res, result.token);
+    return result;
   }
 
   @UseGuards(ProgramContextGuard)

@@ -11,8 +11,8 @@ import { Request, Response } from "express";
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const req = ctx.getRequest<Request>();
+    const res = ctx.getResponse<Response>();
 
     const isHttpException = exception instanceof HttpException;
 
@@ -20,36 +20,87 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ? exception.getStatus()
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const exceptionResponse = isHttpException ? exception.getResponse() : null;
+    const exceptionResponse = isHttpException
+      ? exception.getResponse()
+      : null;
 
-    let message: string | string[] = "Internal server error";
+    const path = req.originalUrl || req.url;
+    const timestamp = new Date().toISOString();
+
+    const message = this.resolveMessage(exceptionResponse, status, path);
+
+    if (status >= 500) {
+      console.error("UNHANDLED EXCEPTION:", exception);
+    } else {
+      console.warn("HTTP EXCEPTION:", {
+        method: req.method,
+        path,
+        status,
+        message,
+      });
+    }
+
+    res.status(status).json({
+      statusCode: status,
+      message,
+      timestamp,
+      path,
+    });
+  }
+
+  private resolveMessage(
+    exceptionResponse: string | object | null,
+    status: number,
+    path: string
+  ) {
+    if (status >= 500) {
+      if (this.isAuthPath(path)) {
+        return "Something went wrong while processing this auth request.";
+      }
+
+      return "Internal server error";
+    }
 
     if (typeof exceptionResponse === "string") {
-      message = exceptionResponse;
-    } else if (
+      return exceptionResponse;
+    }
+
+    if (
       exceptionResponse &&
       typeof exceptionResponse === "object" &&
       "message" in exceptionResponse
     ) {
-      message = (exceptionResponse as { message?: string | string[] }).message ?? message;
+      const raw = (exceptionResponse as any).message;
+
+      if (Array.isArray(raw)) {
+        return raw[0] ?? "Request failed";
+      }
+
+      if (typeof raw === "string") {
+        return raw;
+      }
     }
 
-    if (isHttpException) {
-      console.error("HTTP EXCEPTION:", {
-        method: request.method,
-        path: request.url,
-        status,
-        message,
-      });
-    } else {
-      console.error("UNHANDLED EXCEPTION:", exception);
+    if (status === 401) {
+      return "Unauthorized";
     }
 
-    response.status(status).json({
-      statusCode: status,
-      message,
-      timestamp: new Date().toISOString(),
-      path: request.url,
-    });
+    if (status === 403) {
+      return "Forbidden";
+    }
+
+    if (status === 404) {
+      return "Not found";
+    }
+
+    if (status === 429) {
+      return "Too many requests. Please wait and try again.";
+    }
+
+    return "Request failed";
+  }
+
+  private isAuthPath(path: string) {
+    return path.startsWith("/auth");
   }
 }

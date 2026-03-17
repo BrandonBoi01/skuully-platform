@@ -192,4 +192,59 @@ export class EmailService {
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
+
+  async sendPasswordResetEmail(input: {
+  to: string;
+  fullName?: string | null;
+  resetUrl: string;
+}) {
+  const name = input.fullName?.trim() || "there";
+
+  await this.send({
+    to: input.to,
+    subject: "Reset your Skuully password",
+    text: `Hi ${name}, we received a request to reset your Skuully password. Open this link to continue: ${input.resetUrl} If you didn’t request this, you can ignore this email.`,
+    html: `
+      <div style="font-family: Inter, Arial, sans-serif; background: #050505; color: #ffffff; padding: 32px;">
+        <div style="max-width: 560px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; background: #0b0b0b; padding: 32px;">
+          <h1 style="font-size: 28px; margin: 0 0 16px;">Reset your password</h1>
+          <p style="color: rgba(255,255,255,0.72); line-height: 1.7; margin: 0 0 20px;">
+            Hi ${name}, we received a request to reset your Skuully password.
+          </p>
+          <p style="margin: 0 0 24px;">
+            <a href="${input.resetUrl}" style="display: inline-block; background: #ffffff; color: #000000; text-decoration: none; padding: 14px 20px; border-radius: 999px; font-weight: 600;">
+              Reset password
+            </a>
+          </p>
+          <p style="color: rgba(255,255,255,0.52); line-height: 1.7; margin: 0;">
+            If you didn’t request this, you can safely ignore this email.
+          </p>
+        </div>
+      </div>
+    `,
+  });
+}
+
+async sendPasswordChangedEmail(input: {
+  to: string;
+  fullName?: string | null;
+}) {
+  const name = input.fullName?.trim() || "there";
+
+  await this.send({
+    to: input.to,
+    subject: "Your Skuully password was changed",
+    text: `Hi ${name}, your Skuully password was successfully changed.`,
+    html: `
+      <div style="font-family: Inter, Arial, sans-serif; background: #050505; color: #ffffff; padding: 32px;">
+        <div style="max-width: 560px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; background: #0b0b0b; padding: 32px;">
+          <h1 style="font-size: 28px; margin: 0 0 16px;">Password updated</h1>
+          <p style="color: rgba(255,255,255,0.72); line-height: 1.7; margin: 0;">
+            Hi ${name}, your Skuully password was successfully changed.
+          </p>
+        </div>
+      </div>
+    `,
+  });
+}
 }

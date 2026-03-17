@@ -61,31 +61,34 @@ model BranchMember {
 }
 
 model User {
-  id                     String               @id @default(cuid())
+  id                     String                  @id @default(cuid())
   fullName               String
-  email                  String               @unique
-  phone                  String?              @unique
+  email                  String                  @unique
+  phone                  String?                 @unique
   passwordHash           String
-  skuullyId              String               @unique
+  skuullyId              String                  @unique
   avatarUrl              String?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  emailVerifiedAt        DateTime?
   attendanceMarks        AttendanceMark[]
   attendanceSessions     AttendanceSession[]
+  authAuditLogs          AuthAuditLog[]
   branchMemberships      BranchMember[]
-  dailyAttendancesLocked DailyAttendance[]    @relation("DailyAttendanceLockedBy")
-  devicesCreated         Device[]             @relation("DeviceCreatedBy")
-  excuseRequestsMade     ExcuseRequest[]      @relation("ExcuseRequestedBy")
-  excuseRequestsReviewed ExcuseRequest[]      @relation("ExcuseReviewedBy")
-  leaveOutsApproved      LeaveOutPass[]       @relation("LeaveOutApprovedBy")
-  leaveOutsRequested     LeaveOutPass[]       @relation("LeaveOutRequestedBy")
-  orgMemberships         OrganizationMember[]
-  memberships            SchoolMembership[]
-  staffProfiles          Staff[]              @relation("StaffUser")
-  staffSessionMarks      StaffSessionMark[]   @relation("StaffSessionMarkedBy")
-  visitorLogsCreated     VisitorLog[]         @relation("VisitorLogCreatedBy")
-  emailVerifiedAt        DateTime?
+  dailyAttendancesLocked DailyAttendance[]       @relation("DailyAttendanceLockedBy")
+  devicesCreated         Device[]                @relation("DeviceCreatedBy")
   emailVerificationCodes EmailVerificationCode[]
+  excuseRequestsMade     ExcuseRequest[]         @relation("ExcuseRequestedBy")
+  excuseRequestsReviewed ExcuseRequest[]         @relation("ExcuseReviewedBy")
+  leaveOutsApproved      LeaveOutPass[]          @relation("LeaveOutApprovedBy")
+  leaveOutsRequested     LeaveOutPass[]          @relation("LeaveOutRequestedBy")
+  orgMemberships         OrganizationMember[]
+  passwordResetTokens    PasswordResetToken[]
+  refreshSessions        RefreshSession[]
+  memberships            SchoolMembership[]
+  staffProfiles          Staff[]                 @relation("StaffUser")
+  staffSessionMarks      StaffSessionMark[]      @relation("StaffSessionMarkedBy")
+  visitorLogsCreated     VisitorLog[]            @relation("VisitorLogCreatedBy")
 }
 
 model EmailVerificationCode {
@@ -101,6 +104,63 @@ model EmailVerificationCode {
   @@index([code])
 }
 
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  tokenHash String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model AuthAuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  email     String?
+  event     String
+  success   Boolean  @default(false)
+  reason    String?
+  ipAddress String?
+  userAgent String?
+  metaJson  Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([email])
+  @@index([event])
+  @@index([createdAt])
+}
+
+model RefreshSession {
+  id            String    @id @default(cuid())
+  userId        String
+  tokenHash     String    @unique
+  csrfTokenHash String
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  replacedById  String?
+  ipAddress     String?
+  userAgent     String?
+  schoolId      String?
+  programId     String?
+  role          String?
+  membershipId  String?
+  lastUsedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([schoolId])
+  @@index([programId])
+}
+
 model School {
   id                 String              @id @default(cuid())
   name               String
@@ -112,6 +172,7 @@ model School {
   updatedAt          DateTime            @updatedAt
   branchId           String?
   organizationId     String?
+  institutionType    InstitutionType     @default(SCHOOL)
   attendanceEvents   AttendanceEvent[]
   attendanceSessions AttendanceSession[]
   dailyAttendances   DailyAttendance[]
@@ -130,6 +191,7 @@ model School {
 
   @@index([organizationId])
   @@index([branchId])
+  @@index([institutionType])
 }
 
 model SchoolMembership {
@@ -633,6 +695,17 @@ enum SchoolRole {
   TEACHER
   ACCOUNTANT
   HR
+}
+
+enum InstitutionType {
+  SCHOOL
+  COLLEGE
+  UNIVERSITY
+  POLYTECHNIC
+  VOCATIONAL
+  TRAINING_CENTER
+  ACADEMY
+  OTHER
 }
 
 enum OrgRole {
