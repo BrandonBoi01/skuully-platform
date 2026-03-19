@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma } from "@prisma/client";
+import { Prisma, VerificationPurpose } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes, randomInt } from "crypto";
 
@@ -36,6 +36,7 @@ export class AuthService {
     const { ipAddress, userAgent } = this.extractRequestMeta(req);
 
     const existing = await this.users.findByEmail(email);
+
     if (existing) {
       await this.authAudit.log({
         email,
@@ -45,27 +46,29 @@ export class AuthService {
         success: false,
         reason: "email_in_use",
       });
+
       throw new BadRequestException("Email already in use");
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
+    const fullName = this.deriveNameFromEmail(email);
 
     const user = await this.prisma.user.create({
       data: {
-        fullName: email.split("@")[0],
+        fullName,
         email,
         passwordHash,
-        skuullyId: await this.generateUniqueSkuullyId(
-          this.prisma,
-          email.split("@")[0]
-        ),
+        preferredLoginMethod: "EMAIL",
+        skuullyId: await this.generateUniqueSkuullyId(this.prisma, fullName),
       },
       select: {
         id: true,
         fullName: true,
         email: true,
+        phone: true,
         skuullyId: true,
         emailVerifiedAt: true,
+        phoneVerifiedAt: true,
       },
     });
 
@@ -74,11 +77,15 @@ export class AuthService {
       user.email
     );
 
-    await this.emailService.sendVerificationCodeEmail({
-      to: user.email,
-      fullName: user.fullName,
-      code: verificationCode,
-    });
+    try {
+      await this.emailService.sendVerificationCodeEmail({
+        to: user.email,
+        fullName: user.fullName,
+        code: verificationCode,
+      });
+    } catch (error) {
+      console.error("Failed to send verification email:", error);
+    }
 
     const session = await this.sessionTokens.issueSession({
       userId: user.id,
@@ -103,21 +110,25 @@ export class AuthService {
       message: "Registration successful. Verify your email to continue.",
       requiresEmailVerification: true,
       emailVerified: false,
+      phoneVerified: !!user.phoneVerifiedAt,
       user,
       session,
     };
   }
 
   async login(dto: LoginDto, req?: any) {
-    const identifier = dto.identifier.trim().toLowerCase();
+    const rawIdentifier = dto.identifier.trim();
+    const loweredIdentifier = rawIdentifier.toLowerCase();
+    const normalizedPhone = this.normalizeLoginPhone(rawIdentifier);
     const { ipAddress, userAgent } = this.extractRequestMeta(req);
 
     const user = await this.prisma.user.findFirst({
       where: {
         OR: [
-          { email: identifier },
-          { skuullyId: identifier },
-          { phone: identifier },
+          { email: loweredIdentifier },
+          { skuullyId: loweredIdentifier },
+          ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+          { phone: loweredIdentifier },
         ],
       },
       select: {
@@ -134,18 +145,20 @@ export class AuthService {
 
     if (!user) {
       await this.authAudit.log({
-        email: identifier,
+        email: loweredIdentifier,
         event: "login_failed",
         ipAddress,
         userAgent,
         success: false,
         reason: "user_not_found",
       });
+
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) {
+    const passwordOk = await bcrypt.compare(dto.password, user.passwordHash);
+
+    if (!passwordOk) {
       await this.authAudit.log({
         userId: user.id,
         email: user.email,
@@ -155,6 +168,7 @@ export class AuthService {
         success: false,
         reason: "invalid_password",
       });
+
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -191,9 +205,9 @@ export class AuthService {
       userAgent,
       success: true,
       meta: {
+        loginIdentifier: rawIdentifier,
         emailVerified: !!user.emailVerifiedAt,
         phoneVerified: !!user.phoneVerifiedAt,
-        loginIdentifier: identifier,
       },
     });
 
@@ -205,8 +219,8 @@ export class AuthService {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
-        skuullyId: user.skuullyId,
         phone: user.phone,
+        skuullyId: user.skuullyId,
       },
       session,
     };
@@ -236,6 +250,7 @@ export class AuthService {
         success: false,
         reason: "user_not_found",
       });
+
       throw new BadRequestException("Invalid verification request");
     }
 
@@ -251,6 +266,7 @@ export class AuthService {
         userId: user.id,
         email,
         code,
+        purpose: VerificationPurpose.EMAIL_VERIFY,
         usedAt: null,
         expiresAt: {
           gt: new Date(),
@@ -271,6 +287,7 @@ export class AuthService {
         success: false,
         reason: "invalid_or_expired_code",
       });
+
       throw new BadRequestException("Invalid or expired verification code");
     }
 
@@ -289,10 +306,14 @@ export class AuthService {
       }),
     ]);
 
-    await this.emailService.sendWelcomeEmail({
-      to: user.email,
-      fullName: user.fullName,
-    });
+    try {
+      await this.emailService.sendWelcomeEmail({
+        to: user.email,
+        fullName: user.fullName,
+      });
+    } catch (error) {
+      console.error("Failed to send welcome email:", error);
+    }
 
     await this.authAudit.log({
       userId: user.id,
@@ -350,11 +371,15 @@ export class AuthService {
       user.email
     );
 
-    await this.emailService.sendVerificationCodeEmail({
-      to: user.email,
-      fullName: user.fullName,
-      code: verificationCode,
-    });
+    try {
+      await this.emailService.sendVerificationCodeEmail({
+        to: user.email,
+        fullName: user.fullName,
+        code: verificationCode,
+      });
+    } catch (error) {
+      console.error("Failed to resend verification email:", error);
+    }
 
     await this.authAudit.log({
       userId: user.id,
@@ -426,11 +451,15 @@ export class AuthService {
     const appUrl = process.env.APP_URL?.trim() || "http://localhost:3000";
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
-    await this.emailService.sendPasswordResetEmail({
-      to: user.email,
-      fullName: user.fullName,
-      resetUrl,
-    });
+    try {
+      await this.emailService.sendPasswordResetEmail({
+        to: user.email,
+        fullName: user.fullName,
+        resetUrl,
+      });
+    } catch (error) {
+      console.error("Failed to send password reset email:", error);
+    }
 
     await this.authAudit.log({
       userId: user.id,
@@ -473,6 +502,7 @@ export class AuthService {
         success: false,
         reason: "invalid_or_expired_token",
       });
+
       throw new BadRequestException("This reset link is invalid or has expired");
     }
 
@@ -491,6 +521,7 @@ export class AuthService {
         success: false,
         reason: "same_as_current_password",
       });
+
       throw new BadRequestException(
         "Choose a new password that is different from your current password"
       );
@@ -523,10 +554,14 @@ export class AuthService {
       }),
     ]);
 
-    await this.emailService.sendPasswordChangedEmail({
-      to: record.user.email,
-      fullName: record.user.fullName,
-    });
+    try {
+      await this.emailService.sendPasswordChangedEmail({
+        to: record.user.email,
+        fullName: record.user.fullName,
+      });
+    } catch (error) {
+      console.error("Failed to send password changed email:", error);
+    }
 
     await this.authAudit.log({
       userId: record.user.id,
@@ -614,6 +649,7 @@ export class AuthService {
           where: { status: "ACTIVE" },
           orderBy: { createdAt: "desc" },
           select: {
+            id: true,
             role: true,
             status: true,
             createdAt: true,
@@ -649,7 +685,7 @@ export class AuthService {
         userId,
         email,
         code,
-        purpose: "EMAIL_VERIFY",
+        purpose: VerificationPurpose.EMAIL_VERIFY,
         expiresAt,
       },
     });
@@ -674,6 +710,28 @@ export class AuthService {
       ipAddress,
       userAgent,
     };
+  }
+
+  private deriveNameFromEmail(email: string) {
+    const localPart = email.split("@")[0] || "user";
+
+    return localPart
+      .replace(/[._-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private normalizeLoginPhone(value: string) {
+    const raw = value.trim();
+    if (!raw) return null;
+
+    if (raw.startsWith("+")) {
+      const digits = raw.slice(1).replace(/\D/g, "");
+      return digits ? `+${digits}` : null;
+    }
+
+    const digits = raw.replace(/\D/g, "");
+    return digits || null;
   }
 
   private async generateUniqueSkuullyId(
