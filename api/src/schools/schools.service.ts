@@ -5,9 +5,16 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { InstitutionType, SchoolRole } from "@prisma/client";
+import {
+  BranchRole,
+  InstitutionType,
+  OrgRole,
+  Prisma,
+  SchoolRole,
+} from "@prisma/client";
 import { randomBytes } from "crypto";
 import * as bcrypt from "bcryptjs";
+
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateSchoolDto } from "./dto/create-school.dto";
 
@@ -34,11 +41,20 @@ export class SchoolsService {
             id: true,
             name: true,
             country: true,
+            countryCode: true,
             county: true,
             curriculum: true,
             institutionType: true,
+            learningMode: true,
+            ownership: true,
+            levelType: true,
+            primaryPhone: true,
+            phoneVerifiedAt: true,
+            onboardingCompletedAt: true,
             organizationId: true,
             branchId: true,
+            createdAt: true,
+            updatedAt: true,
             branch: {
               select: {
                 id: true,
@@ -49,6 +65,17 @@ export class SchoolsService {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+            academicFrameworks: {
+              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              select: {
+                id: true,
+                label: true,
+                code: true,
+                category: true,
+                isPrimary: true,
+                sortOrder: true,
               },
             },
           },
@@ -70,18 +97,14 @@ export class SchoolsService {
   // =========================================================
 
   async createSchoolWorkspace(userId: string, dto: CreateSchoolDto) {
-    const schoolName = dto.name.trim();
-    const country = dto.country.trim();
-    const institutionType = dto.institutionType ?? InstitutionType.SCHOOL;
-    const organizationName = dto.organizationName?.trim() || schoolName;
-    const branchName = dto.branchName?.trim() || "Main Campus";
+    return this.createSchool(userId, dto);
+  }
 
+  async createSchool(userId: string, dto: CreateSchoolDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
-        fullName: true,
-        email: true,
         emailVerifiedAt: true,
       },
     });
@@ -96,17 +119,49 @@ export class SchoolsService {
       );
     }
 
-    const template = await this.resolveCurriculumTemplate({
-      country,
-      curriculumCode: dto.curriculumCode?.trim(),
-      curriculumName: dto.curriculumName?.trim(),
-    });
+    const name = dto.name?.trim();
+    const country = dto.country?.trim();
+    const countryCode = dto.countryCode?.trim() || null;
+    const institutionType = dto.institutionType ?? InstitutionType.SCHOOL;
+    const organizationName = dto.organizationName?.trim() || name;
+    const branchName = dto.branchName?.trim() || "Main Campus";
+
+    if (!name) {
+      throw new ConflictException("School name is required");
+    }
+
+    if (!country) {
+      throw new ConflictException("Country is required");
+    }
+
+    const academicLabel = dto.academicSetup?.label?.trim() || null;
+    const academicSetUpLater = dto.academicSetup?.setUpLater ?? false;
+    const selectedAcademicItems = (dto.academicSetup?.selectedItems ?? [])
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const uniqueAcademicItems = [...new Set(selectedAcademicItems)];
+    const primaryAcademicItem =
+      !academicSetUpLater && uniqueAcademicItems.length > 0
+        ? uniqueAcademicItems[0]
+        : null;
+
+    const learningMode = dto.institutionProfile?.learningMode?.trim() || null;
+    const ownership = dto.institutionProfile?.ownership?.trim() || null;
+    const levelType = dto.institutionProfile?.levelType?.trim() || null;
+
+    const addPhoneLater = dto.security?.addPhoneLater ?? true;
+    const phonePayload = dto.security?.phone ?? null;
+    const primaryPhone =
+      !addPhoneLater && phonePayload?.e164?.trim()
+        ? phonePayload.e164.trim()
+        : null;
 
     const result = await this.prisma.$transaction(
       async (tx) => {
         const organization = await tx.organization.create({
           data: {
-            name: organizationName,
+            name: organizationName!,
             country,
           },
           select: {
@@ -120,7 +175,7 @@ export class SchoolsService {
           data: {
             organizationId: organization.id,
             userId,
-            role: "ORG_OWNER",
+            role: OrgRole.ORG_OWNER,
           },
         });
 
@@ -139,16 +194,23 @@ export class SchoolsService {
           data: {
             branchId: branch.id,
             userId,
-            role: "BRANCH_ADMIN",
+            role: BranchRole.BRANCH_ADMIN,
           },
         });
 
         const school = await tx.school.create({
           data: {
-            name: schoolName,
+            name,
             country,
-            curriculum: template.name,
+            countryCode,
+            curriculum: primaryAcademicItem,
             institutionType,
+            learningMode,
+            ownership,
+            levelType,
+            primaryPhone,
+            phoneVerifiedAt: null,
+            onboardingCompletedAt: new Date(),
             organizationId: organization.id,
             branchId: branch.id,
           },
@@ -156,38 +218,161 @@ export class SchoolsService {
             id: true,
             name: true,
             country: true,
+            countryCode: true,
+            county: true,
             curriculum: true,
             institutionType: true,
+            learningMode: true,
+            ownership: true,
+            levelType: true,
+            primaryPhone: true,
+            phoneVerifiedAt: true,
+            onboardingCompletedAt: true,
             organizationId: true,
             branchId: true,
+            createdAt: true,
+            updatedAt: true,
           },
         });
 
-        await tx.schoolMembership.create({
+        const membership = await tx.schoolMembership.create({
           data: {
+            schoolId: school.id,
             userId,
-            schoolId: school.id,
             role: SchoolRole.OWNER,
-            status: "ACTIVE",
-          },
-        });
-
-        const program = await tx.schoolProgram.create({
-          data: {
-            schoolId: school.id,
-            templateId: template.id,
-            name: this.defaultProgramNameForInstitutionType(institutionType),
             status: "ACTIVE",
           },
           select: {
             id: true,
-            name: true,
+            role: true,
             status: true,
-            template: {
+          },
+        });
+
+        if (!academicSetUpLater && uniqueAcademicItems.length > 0) {
+          await tx.schoolAcademicFramework.createMany({
+            data: uniqueAcademicItems.map((label, index) => ({
+              schoolId: school.id,
+              label,
+              code: null,
+              category: academicLabel,
+              isPrimary: index === 0,
+              sortOrder: index,
+            })),
+          });
+        }
+
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            onboardingCompletedAt: new Date(),
+          },
+        });
+
+        await tx.userOnboarding.upsert({
+          where: { userId },
+          create: {
+            userId,
+            route: "BUILD_INSTITUTION",
+            institutionTypeDraft: institutionType,
+            institutionNameDraft: name,
+            countryDraft: country,
+            countryCodeDraft: countryCode,
+            academicLabelDraft: academicLabel,
+            academicItemsDraft: uniqueAcademicItems,
+            academicSetLater: academicSetUpLater,
+            learningModeDraft: learningMode,
+            ownershipDraft: ownership,
+            levelTypeDraft: levelType,
+            phoneCountryCodeDraft:
+              !addPhoneLater && phonePayload?.countryCode
+                ? phonePayload.countryCode.trim()
+                : null,
+            phoneDialCodeDraft:
+              !addPhoneLater && phonePayload?.dialCode
+                ? phonePayload.dialCode.trim()
+                : null,
+            phoneNationalDraft:
+              !addPhoneLater && phonePayload?.nationalNumber
+                ? phonePayload.nationalNumber.trim()
+                : null,
+            phoneE164Draft: primaryPhone,
+            phoneSetLater: addPhoneLater,
+            currentStep: "review",
+            completedAt: new Date(),
+          },
+          update: {
+            route: "BUILD_INSTITUTION",
+            institutionTypeDraft: institutionType,
+            institutionNameDraft: name,
+            countryDraft: country,
+            countryCodeDraft: countryCode,
+            academicLabelDraft: academicLabel,
+            academicItemsDraft: uniqueAcademicItems,
+            academicSetLater: academicSetUpLater,
+            learningModeDraft: learningMode,
+            ownershipDraft: ownership,
+            levelTypeDraft: levelType,
+            phoneCountryCodeDraft:
+              !addPhoneLater && phonePayload?.countryCode
+                ? phonePayload.countryCode.trim()
+                : null,
+            phoneDialCodeDraft:
+              !addPhoneLater && phonePayload?.dialCode
+                ? phonePayload.dialCode.trim()
+                : null,
+            phoneNationalDraft:
+              !addPhoneLater && phonePayload?.nationalNumber
+                ? phonePayload.nationalNumber.trim()
+                : null,
+            phoneE164Draft: primaryPhone,
+            phoneSetLater: addPhoneLater,
+            currentStep: "review",
+            completedAt: new Date(),
+          },
+        });
+
+        const hydratedSchool = await tx.school.findUnique({
+          where: { id: school.id },
+          select: {
+            id: true,
+            name: true,
+            country: true,
+            countryCode: true,
+            county: true,
+            curriculum: true,
+            institutionType: true,
+            learningMode: true,
+            ownership: true,
+            levelType: true,
+            primaryPhone: true,
+            phoneVerifiedAt: true,
+            onboardingCompletedAt: true,
+            organizationId: true,
+            branchId: true,
+            createdAt: true,
+            updatedAt: true,
+            branch: {
               select: {
                 id: true,
-                code: true,
                 name: true,
+              },
+            },
+            organization: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            academicFrameworks: {
+              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              select: {
+                id: true,
+                label: true,
+                code: true,
+                category: true,
+                isPrimary: true,
+                sortOrder: true,
               },
             },
           },
@@ -196,159 +381,36 @@ export class SchoolsService {
         return {
           organization,
           branch,
-          school,
-          program,
+          school: hydratedSchool!,
+          membership,
         };
       },
-      {
-        timeout: 15000,
-      }
+      { timeout: 20000 }
     );
 
     const token = await this.jwt.signAsync({
       sub: userId,
       schoolId: result.school.id,
-      role: SchoolRole.OWNER,
-      programId: result.program.id,
+      role: result.membership.role,
+      membershipId: result.membership.id,
     });
 
     return {
       message: "Your Skuully workspace is ready.",
       token,
-      active: {
-        role: SchoolRole.OWNER,
-        school: result.school,
-        branch: result.branch,
-        organization: result.organization,
-        program: result.program,
+      school: result.school,
+      membership: {
+        id: result.membership.id,
+        role: result.membership.role,
+        status: result.membership.status,
       },
-      institutionType,
+      active: {
+        school: result.school,
+        role: result.membership.role,
+        membershipId: result.membership.id,
+      },
     };
   }
-
-  async createSchool(userId: string, dto: CreateSchoolDto) {
-  const name = dto.name.trim();
-  const country = dto.country.trim();
-  const curriculum = dto.curriculumName?.trim() || null;
-  const institutionType = dto.institutionType ?? "SCHOOL";
-  const organizationName = dto.organizationName?.trim() || null;
-  const branchName = dto.branchName?.trim() || null;
-
-  if (!name) {
-    throw new ConflictException("School name is required");
-  }
-
-  if (!country) {
-    throw new ConflictException("Country is required");
-  }
-
-  const result = await this.prisma.$transaction(async (tx) => {
-    let organizationId: string | null = null;
-    let branchId: string | null = null;
-
-    if (organizationName) {
-      const organization = await tx.organization.create({
-        data: {
-          name: organizationName,
-          country,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      organizationId = organization.id;
-
-      if (branchName) {
-        const branch = await tx.branch.create({
-          data: {
-            organizationId: organization.id,
-            name: branchName,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        branchId = branch.id;
-
-        await tx.branchMember.create({
-          data: {
-            branchId: branch.id,
-            userId,
-            role: "BRANCH_ADMIN",
-          },
-        });
-      }
-
-      await tx.organizationMember.create({
-        data: {
-          organizationId: organization.id,
-          userId,
-          role: "ORG_OWNER",
-        },
-      });
-    }
-
-    const school = await tx.school.create({
-      data: {
-        name,
-        country,
-        curriculum,
-        institutionType,
-        organizationId,
-        branchId,
-      },
-      select: {
-        id: true,
-        name: true,
-        country: true,
-        curriculum: true,
-        institutionType: true,
-        organizationId: true,
-        branchId: true,
-        createdAt: true,
-      },
-    });
-
-    const membership = await tx.schoolMembership.create({
-      data: {
-        schoolId: school.id,
-        userId,
-        role: "OWNER",
-        status: "ACTIVE",
-      },
-      select: {
-        id: true,
-        role: true,
-      },
-    });
-
-    return { school, membership };
-  });
-
-  const token = await this.jwt.signAsync({
-    sub: userId,
-    schoolId: result.school.id,
-    role: result.membership.role,
-    membershipId: result.membership.id,
-  });
-
-  return {
-    message: "School created successfully",
-    token,
-    school: result.school,
-    membership: {
-      id: result.membership.id,
-      role: result.membership.role,
-    },
-    active: {
-      school: result.school,
-      role: result.membership.role,
-      membershipId: result.membership.id,
-    },
-  };
-}
 
   // =========================================================
   // SWITCH SCHOOL
@@ -367,11 +429,20 @@ export class SchoolsService {
             id: true,
             name: true,
             country: true,
+            countryCode: true,
             county: true,
             curriculum: true,
             institutionType: true,
+            learningMode: true,
+            ownership: true,
+            levelType: true,
+            primaryPhone: true,
+            phoneVerifiedAt: true,
+            onboardingCompletedAt: true,
             organizationId: true,
             branchId: true,
+            createdAt: true,
+            updatedAt: true,
             branch: {
               select: {
                 id: true,
@@ -382,6 +453,17 @@ export class SchoolsService {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+            academicFrameworks: {
+              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              select: {
+                id: true,
+                label: true,
+                code: true,
+                category: true,
+                isPrimary: true,
+                sortOrder: true,
               },
             },
           },
@@ -399,6 +481,7 @@ export class SchoolsService {
       sub: userId,
       schoolId: membership.schoolId,
       role: membership.role,
+      membershipId: membership.id,
     });
 
     return {
@@ -406,6 +489,7 @@ export class SchoolsService {
       active: {
         school: membership.school,
         role: membership.role,
+        membershipId: membership.id,
       },
     };
   }
@@ -432,11 +516,20 @@ export class SchoolsService {
         id: true,
         name: true,
         country: true,
+        countryCode: true,
         county: true,
         curriculum: true,
         institutionType: true,
+        learningMode: true,
+        ownership: true,
+        levelType: true,
+        primaryPhone: true,
+        phoneVerifiedAt: true,
+        onboardingCompletedAt: true,
         organizationId: true,
         branchId: true,
+        createdAt: true,
+        updatedAt: true,
         branch: {
           select: {
             id: true,
@@ -447,6 +540,17 @@ export class SchoolsService {
           select: {
             id: true,
             name: true,
+          },
+        },
+        academicFrameworks: {
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            label: true,
+            code: true,
+            category: true,
+            isPrimary: true,
+            sortOrder: true,
           },
         },
       },
@@ -589,6 +693,7 @@ export class SchoolsService {
             id: true,
             name: true,
             country: true,
+            countryCode: true,
             county: true,
             curriculum: true,
             institutionType: true,
@@ -630,34 +735,50 @@ export class SchoolsService {
               email,
               passwordHash,
               skuullyId,
+              onboardingCompletedAt: new Date(),
             },
           });
         }
+
+        let membershipId: string;
 
         const existingMembership = await tx.schoolMembership.findFirst({
           where: {
             userId: user.id,
             schoolId: invite.schoolId,
           },
+          select: {
+            id: true,
+          },
         });
 
         if (existingMembership) {
-          await tx.schoolMembership.update({
+          const updatedMembership = await tx.schoolMembership.update({
             where: { id: existingMembership.id },
             data: {
               role: invite.role,
               status: "ACTIVE",
             },
+            select: {
+              id: true,
+            },
           });
+
+          membershipId = updatedMembership.id;
         } else {
-          await tx.schoolMembership.create({
+          const createdMembership = await tx.schoolMembership.create({
             data: {
               userId: user.id,
               schoolId: invite.schoolId,
               role: invite.role,
               status: "ACTIVE",
             },
+            select: {
+              id: true,
+            },
           });
+
+          membershipId = createdMembership.id;
         }
 
         await tx.schoolInvite.update({
@@ -665,7 +786,25 @@ export class SchoolsService {
           data: { status: "ACCEPTED" },
         });
 
-        return user;
+        await tx.userOnboarding.upsert({
+          where: { userId: user.id },
+          create: {
+            userId: user.id,
+            route: "JOIN_INSTITUTION",
+            currentStep: "completed",
+            completedAt: new Date(),
+          },
+          update: {
+            route: "JOIN_INSTITUTION",
+            currentStep: "completed",
+            completedAt: new Date(),
+          },
+        });
+
+        return {
+          user,
+          membershipId,
+        };
       },
       {
         timeout: 15000,
@@ -673,23 +812,23 @@ export class SchoolsService {
     );
 
     const token = await this.jwt.signAsync({
-      sub: createdOrFoundUser.id,
+      sub: createdOrFoundUser.user.id,
+      schoolId: invite.schoolId,
+      role: invite.role,
+      membershipId: createdOrFoundUser.membershipId,
     });
 
     return {
       message: "Invite accepted",
       token,
       user: {
-        id: createdOrFoundUser.id,
-        fullName: createdOrFoundUser.fullName,
-        email: createdOrFoundUser.email,
+        id: createdOrFoundUser.user.id,
+        fullName: createdOrFoundUser.user.fullName,
+        email: createdOrFoundUser.user.email,
       },
       school: invite.school,
       role: invite.role,
-      next: [
-        `POST /schools/switch/${invite.schoolId}`,
-        "POST /programs/switch/:programId",
-      ],
+      membershipId: createdOrFoundUser.membershipId,
     };
   }
 
@@ -720,130 +859,11 @@ export class SchoolsService {
   }
 
   // =========================================================
-  // CURRICULUM / PROGRAM HELPERS
-  // =========================================================
-
-  private async resolveCurriculumTemplate(input: {
-    country: string;
-    curriculumCode?: string;
-    curriculumName?: string;
-  }) {
-    if (input.curriculumCode) {
-      const exact = await this.prisma.curriculumTemplate.findUnique({
-        where: { code: input.curriculumCode.toUpperCase() },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-        },
-      });
-
-      if (exact) return exact;
-    }
-
-    if (input.curriculumName) {
-      const byName = await this.prisma.curriculumTemplate.findFirst({
-        where: {
-          name: {
-            equals: input.curriculumName,
-            mode: "insensitive",
-          },
-        },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-        },
-      });
-
-      if (byName) return byName;
-    }
-
-    const suggestedCode = this.suggestTemplateCodeByCountry(input.country);
-
-    if (suggestedCode) {
-      const suggested = await this.prisma.curriculumTemplate.findUnique({
-        where: { code: suggestedCode },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-        },
-      });
-
-      if (suggested) return suggested;
-    }
-
-    const generic =
-      (await this.prisma.curriculumTemplate.findUnique({
-        where: { code: "GENERIC" },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-        },
-      })) ??
-      (await this.prisma.curriculumTemplate.create({
-        data: {
-          code: "GENERIC",
-          name: "General Program",
-          description:
-            "A flexible curriculum for institutions that want to configure their structure gradually.",
-        },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-        },
-      }));
-
-    return generic;
-  }
-
-  private suggestTemplateCodeByCountry(country: string) {
-    const normalized = country.trim().toLowerCase();
-
-    const map: Record<string, string> = {
-      kenya: "CBC",
-      uganda: "UGANDA",
-      tanzania: "TANZANIA",
-      rwanda: "RWANDA",
-      "south africa": "CAPS",
-      ghana: "GHANA",
-      nigeria: "NIGERIA",
-      "united kingdom": "BRITISH",
-      uk: "BRITISH",
-      india: "CBSE",
-      australia: "AUSTRALIA",
-      "new zealand": "NEW_ZEALAND",
-    };
-
-    return map[normalized] ?? "GENERIC";
-  }
-
-  private defaultProgramNameForInstitutionType(
-    institutionType: InstitutionType
-  ) {
-    const map: Record<InstitutionType, string> = {
-      SCHOOL: "General Program",
-      COLLEGE: "College Program",
-      UNIVERSITY: "University Program",
-      POLYTECHNIC: "Polytechnic Program",
-      VOCATIONAL: "Vocational Program",
-      TRAINING_CENTER: "Training Program",
-      ACADEMY: "Academy Program",
-      OTHER: "General Program",
-    };
-
-    return map[institutionType] ?? "General Program";
-  }
-
-  // =========================================================
   // HELPERS
   // =========================================================
 
   private async generateUniqueSkuullyId(
-    tx: PrismaService | any,
+    tx: Prisma.TransactionClient | PrismaService,
     fullName: string
   ): Promise<string> {
     const base =

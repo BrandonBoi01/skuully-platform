@@ -69,7 +69,10 @@ export class AuthService {
       },
     });
 
-    const verificationCode = await this.createEmailVerificationCode(user.id);
+    const verificationCode = await this.createEmailVerificationCode(
+      user.id,
+      user.email
+    );
 
     await this.emailService.sendVerificationCodeEmail({
       to: user.email,
@@ -106,21 +109,39 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, req?: any) {
-    const email = dto.email.trim().toLowerCase();
+    const identifier = dto.identifier.trim().toLowerCase();
     const { ipAddress, userAgent } = this.extractRequestMeta(req);
 
-    const user = await this.users.findByEmail(email);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { skuullyId: identifier },
+          { phone: identifier },
+        ],
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        skuullyId: true,
+        passwordHash: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+      },
+    });
 
     if (!user) {
       await this.authAudit.log({
-        email,
+        email: identifier,
         event: "login_failed",
         ipAddress,
         userAgent,
         success: false,
         reason: "user_not_found",
       });
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("Invalid credentials");
     }
 
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
@@ -134,7 +155,7 @@ export class AuthService {
         success: false,
         reason: "invalid_password",
       });
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("Invalid credentials");
     }
 
     const latestMembership = await this.prisma.schoolMembership.findFirst({
@@ -171,17 +192,21 @@ export class AuthService {
       success: true,
       meta: {
         emailVerified: !!user.emailVerifiedAt,
+        phoneVerified: !!user.phoneVerifiedAt,
+        loginIdentifier: identifier,
       },
     });
 
     return {
       requiresEmailVerification: !user.emailVerifiedAt,
       emailVerified: !!user.emailVerifiedAt,
+      phoneVerified: !!user.phoneVerifiedAt,
       user: {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
         skuullyId: user.skuullyId,
+        phone: user.phone,
       },
       session,
     };
@@ -224,6 +249,7 @@ export class AuthService {
     const record = await this.prisma.emailVerificationCode.findFirst({
       where: {
         userId: user.id,
+        email,
         code,
         usedAt: null,
         expiresAt: {
@@ -319,7 +345,10 @@ export class AuthService {
       };
     }
 
-    const verificationCode = await this.createEmailVerificationCode(user.id);
+    const verificationCode = await this.createEmailVerificationCode(
+      user.id,
+      user.email
+    );
 
     await this.emailService.sendVerificationCodeEmail({
       to: user.email,
@@ -576,8 +605,10 @@ export class AuthService {
         id: true,
         fullName: true,
         email: true,
+        phone: true,
         skuullyId: true,
         emailVerifiedAt: true,
+        phoneVerifiedAt: true,
         createdAt: true,
         memberships: {
           where: { status: "ACTIVE" },
@@ -605,17 +636,20 @@ export class AuthService {
     return {
       ...user,
       emailVerified: !!user.emailVerifiedAt,
+      phoneVerified: !!user.phoneVerifiedAt,
     };
   }
 
-  private async createEmailVerificationCode(userId: string) {
+  private async createEmailVerificationCode(userId: string, email: string) {
     const code = String(randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.prisma.emailVerificationCode.create({
       data: {
         userId,
+        email,
         code,
+        purpose: "EMAIL_VERIFY",
         expiresAt,
       },
     });

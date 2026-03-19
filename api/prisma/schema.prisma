@@ -61,16 +61,24 @@ model BranchMember {
 }
 
 model User {
-  id                     String                  @id @default(cuid())
-  fullName               String
-  email                  String                  @unique
-  phone                  String?                 @unique
-  passwordHash           String
-  skuullyId              String                  @unique
-  avatarUrl              String?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  emailVerifiedAt        DateTime?
+  id           String  @id @default(cuid())
+  fullName     String
+  email        String  @unique
+  phone        String? @unique
+  passwordHash String
+  skuullyId    String  @unique
+  avatarUrl    String?
+
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+
+  onboardingCompletedAt DateTime?
+  onboardingStep        String?
+  preferredLoginMethod  LoginMethod?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   attendanceMarks        AttendanceMark[]
   attendanceSessions     AttendanceSession[]
   authAuditLogs          AuthAuditLog[]
@@ -78,6 +86,7 @@ model User {
   dailyAttendancesLocked DailyAttendance[]       @relation("DailyAttendanceLockedBy")
   devicesCreated         Device[]                @relation("DeviceCreatedBy")
   emailVerificationCodes EmailVerificationCode[]
+  phoneVerificationCodes PhoneVerificationCode[]
   excuseRequestsMade     ExcuseRequest[]         @relation("ExcuseRequestedBy")
   excuseRequestsReviewed ExcuseRequest[]         @relation("ExcuseReviewedBy")
   leaveOutsApproved      LeaveOutPass[]          @relation("LeaveOutApprovedBy")
@@ -86,22 +95,48 @@ model User {
   passwordResetTokens    PasswordResetToken[]
   refreshSessions        RefreshSession[]
   memberships            SchoolMembership[]
+  onboarding             UserOnboarding?
   staffProfiles          Staff[]                 @relation("StaffUser")
   staffSessionMarks      StaffSessionMark[]      @relation("StaffSessionMarkedBy")
   visitorLogsCreated     VisitorLog[]            @relation("VisitorLogCreatedBy")
+
+  @@index([emailVerifiedAt])
+  @@index([phoneVerifiedAt])
+  @@index([onboardingCompletedAt])
+}
+
+model PhoneVerificationCode {
+  id        String              @id @default(cuid())
+  userId    String
+  phone     String
+  code      String
+  purpose   VerificationPurpose @default(PHONE_VERIFY)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([phone])
+  @@index([code])
+  @@index([purpose])
 }
 
 model EmailVerificationCode {
-  id        String    @id @default(cuid())
+  id        String              @id @default(cuid())
   userId    String
+  email     String
   code      String
+  purpose   VerificationPurpose @default(EMAIL_VERIFY)
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([email])
   @@index([code])
+  @@index([purpose])
 }
 
 model PasswordResetToken {
@@ -115,6 +150,43 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+model UserOnboarding {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  route                OnboardingRoute?
+  institutionIntent    InstitutionIntent?
+  institutionTypeDraft InstitutionType?
+  institutionNameDraft String?
+  countryDraft         String?
+  countryCodeDraft     String?
+  skuullyIdDraft       String?
+
+  academicLabelDraft String?
+  academicItemsDraft String[]
+  academicSetLater   Boolean  @default(false)
+
+  learningModeDraft String?
+  ownershipDraft    String?
+  levelTypeDraft    String?
+
+  phoneCountryCodeDraft String?
+  phoneDialCodeDraft    String?
+  phoneNationalDraft    String?
+  phoneE164Draft        String?
+  phoneSetLater         Boolean @default(true)
+
+  currentStep String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([route])
+  @@index([institutionTypeDraft])
 }
 
 model AuthAuditLog {
@@ -162,25 +234,39 @@ model RefreshSession {
 }
 
 model School {
-  id                 String              @id @default(cuid())
-  name               String
-  country            String              @default("Kenya")
-  county             String?
-  curriculum         String?
-  logoUrl            String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  branchId           String?
-  organizationId     String?
-  institutionType    InstitutionType     @default(SCHOOL)
+  id          String  @id @default(cuid())
+  name        String
+  country     String  @default("Kenya")
+  countryCode String?
+  county      String?
+  curriculum  String?
+  logoUrl     String?
+
+  institutionType InstitutionType @default(SCHOOL)
+
+  learningMode String?
+  ownership    String?
+  levelType    String?
+
+  primaryPhone    String?
+  phoneVerifiedAt DateTime?
+
+  onboardingCompletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branchId       String?
+  organizationId String?
+
   attendanceEvents   AttendanceEvent[]
   attendanceSessions AttendanceSession[]
   dailyAttendances   DailyAttendance[]
   devices            Device[]
   excuseRequests     ExcuseRequest[]
   leaveOutPasses     LeaveOutPass[]
-  branch             Branch?             @relation(fields: [branchId], references: [id])
-  organization       Organization?       @relation(fields: [organizationId], references: [id])
+  branch             Branch?                   @relation(fields: [branchId], references: [id])
+  organization       Organization?             @relation(fields: [organizationId], references: [id])
   invites            SchoolInvite[]
   members            SchoolMembership[]
   programs           SchoolProgram[]
@@ -188,10 +274,12 @@ model School {
   students           Student[]
   visitors           Visitor[]
   visitorLogs        VisitorLog[]
+  academicFrameworks SchoolAcademicFramework[]
 
   @@index([organizationId])
   @@index([branchId])
   @@index([institutionType])
+  @@index([countryCode])
 }
 
 model SchoolMembership {
@@ -222,6 +310,24 @@ model SchoolInvite {
 
   @@index([schoolId])
   @@index([email])
+}
+
+model SchoolAcademicFramework {
+  id        String   @id @default(cuid())
+  schoolId  String
+  label     String
+  code      String?
+  category  String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, label], name: "unique_school_framework_label")
+  @@index([schoolId])
+  @@index([schoolId, isPrimary])
 }
 
 model CurriculumTemplate {
@@ -811,4 +917,33 @@ enum DailyAttendanceChangeType {
   UNLOCK
   TIMES
   SYSTEM
+}
+
+enum LoginMethod {
+  EMAIL
+  PHONE
+  SKUULLY_ID
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFY
+  PHONE_VERIFY
+  LOGIN_2FA
+  PASSWORD_RESET
+  PHONE_CHANGE
+}
+
+enum OnboardingRoute {
+  BUILD_INSTITUTION
+  JOIN_INSTITUTION
+  EXPLORE_SKUULLY
+}
+
+enum InstitutionIntent {
+  FOUNDER
+  ADMIN
+  OWNER
+  EDUCATOR
+  LEARNER
+  EXPLORER
 }
