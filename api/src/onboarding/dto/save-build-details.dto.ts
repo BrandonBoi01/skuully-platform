@@ -17,9 +17,11 @@ export class SaveBuildDetailsDto {
   @IsEnum(GenderAdmissionPolicy)
   genderAdmissionPolicy?: GenderAdmissionPolicy;
 
+  @IsOptional()
   @IsString()
-  ownership: string;
+  ownership?: string;
 
+  @IsOptional()
   @IsString()
-  levelType: string;
+  levelType?: string;
 }

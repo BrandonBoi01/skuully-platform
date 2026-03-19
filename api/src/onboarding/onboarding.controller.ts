@@ -2,9 +2,7 @@ import {
   Body,
   Controller,
   Get,
-  Patch,
   Post,
-  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -27,50 +25,54 @@ export class OnboardingController {
     return this.onboarding.getMyOnboarding(req.user.userId);
   }
 
-  @Patch("route")
+  @Post("route")
   setRoute(@Req() req: any, @Body() dto: SetOnboardingRouteDto) {
     return this.onboarding.setRoute(req.user.userId, dto);
   }
 
-  @Patch("build/identity")
+  @Post("build/identity")
   saveBuildIdentity(@Req() req: any, @Body() dto: SaveBuildIdentityDto) {
     return this.onboarding.saveBuildIdentity(req.user.userId, dto);
   }
 
   @Get("build/academic-options")
-  getAcademicOptions(
-    @Query("institutionType") institutionType: string,
-    @Query("countryCode") countryCode: string
-  ) {
-    return this.onboarding.getAcademicOptions(institutionType, countryCode);
+  getAcademicOptions(@Req() req: any) {
+    const institutionType = req.query.institutionType;
+    const countryCode = req.query.countryCode;
+
+    return this.onboarding.getAcademicOptions(
+      institutionType,
+      countryCode
+    );
   }
 
-  @Patch("build/academic")
+  @Post("build/academic")
   saveBuildAcademic(@Req() req: any, @Body() dto: SaveBuildAcademicDto) {
     return this.onboarding.saveBuildAcademic(req.user.userId, dto);
   }
 
   @Get("build/detail-options")
-  getDetailOptions(@Query("institutionType") institutionType: string) {
+  getDetailOptions(@Req() req: any) {
+    const institutionType = req.query.institutionType;
     return this.onboarding.getDetailOptions(institutionType);
   }
 
-  @Patch("build/details")
+  @Post("build/details")
   saveBuildDetails(@Req() req: any, @Body() dto: SaveBuildDetailsDto) {
     return this.onboarding.saveBuildDetails(req.user.userId, dto);
   }
 
-  @Post("phone/send-code")
+  @Post("build/phone/send-code")
   sendPhoneCode(@Req() req: any, @Body() dto: SendPhoneCodeDto) {
     return this.onboarding.sendPhoneCode(req.user.userId, dto);
   }
 
-  @Post("phone/verify")
+  @Post("build/phone/verify-code")
   verifyPhoneCode(@Req() req: any, @Body() dto: VerifyPhoneCodeDto) {
     return this.onboarding.verifyPhoneCode(req.user.userId, dto);
   }
 
-  @Patch("phone/skip")
+  @Post("build/phone/skip")
   skipPhone(@Req() req: any) {
     return this.onboarding.skipPhone(req.user.userId);
   }

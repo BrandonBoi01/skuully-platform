@@ -15,6 +15,7 @@ import { StudentsModule } from "./students/students.module";
 import { AttendanceModule } from "./attendance/attendance.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { GeoModule } from "./geo/geo.module";
+import { OnboardingModule } from "./onboarding/onboarding.module";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { GeoModule } from "./geo/geo.module";
     AttendanceModule,
     DashboardModule,
     GeoModule,
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [

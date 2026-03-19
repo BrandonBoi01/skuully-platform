@@ -181,16 +181,8 @@ export class OnboardingService {
           code: "BRITISH",
           category: "international",
         },
-        {
-          label: "CBSE",
-          code: "CBSE",
-          category: "international",
-        },
-        {
-          label: "Montessori",
-          code: "MONTESSORI",
-          category: "alternative",
-        },
+        { label: "CBSE", code: "CBSE", category: "international" },
+        { label: "Montessori", code: "MONTESSORI", category: "alternative" },
       ];
 
       return {
@@ -274,18 +266,16 @@ export class OnboardingService {
       { label: "Mixed", value: GenderAdmissionPolicy.MIXED },
     ];
 
-    const learningModes = [
-      { label: "Day", value: LearningMode.DAY },
-      { label: "Boarding", value: LearningMode.BOARDING },
-      { label: "In-person", value: LearningMode.IN_PERSON },
-      { label: "Online", value: LearningMode.ONLINE },
-      { label: "Hybrid", value: LearningMode.HYBRID },
-    ];
-
     switch (type) {
       case InstitutionType.SCHOOL:
         return {
-          learningModes,
+          learningModes: [
+            LearningMode.DAY,
+            LearningMode.BOARDING,
+            LearningMode.IN_PERSON,
+            LearningMode.ONLINE,
+            LearningMode.HYBRID,
+          ],
           ownerships: ["Private", "Public", "International"],
           levelTypes: ["Primary", "Secondary", "Combined"],
           genderAdmissionPolicies: genderOptions,
@@ -293,7 +283,11 @@ export class OnboardingService {
 
       case InstitutionType.COLLEGE:
         return {
-          learningModes,
+          learningModes: [
+            LearningMode.IN_PERSON,
+            LearningMode.ONLINE,
+            LearningMode.HYBRID,
+          ],
           ownerships: ["Private", "Public"],
           levelTypes: ["Certificate", "Diploma", "Mixed"],
           genderAdmissionPolicies: genderOptions,
@@ -301,22 +295,25 @@ export class OnboardingService {
 
       case InstitutionType.UNIVERSITY:
         return {
-          learningModes,
+          learningModes: [
+            LearningMode.IN_PERSON,
+            LearningMode.ONLINE,
+            LearningMode.HYBRID,
+          ],
           ownerships: ["Private", "Public"],
           levelTypes: ["Undergraduate", "Postgraduate", "Both"],
           genderAdmissionPolicies: genderOptions,
         };
 
-      case InstitutionType.POLYTECHNIC:
-      case InstitutionType.VOCATIONAL:
-      case InstitutionType.TRAINING_CENTER:
-      case InstitutionType.ACADEMY:
-      case InstitutionType.OTHER:
       default:
         return {
-          learningModes,
+          learningModes: [
+            LearningMode.IN_PERSON,
+            LearningMode.ONLINE,
+            LearningMode.HYBRID,
+          ],
           ownerships: ["Private", "Public"],
-          levelTypes: ["General", "Mixed", "Professional", "Certification"],
+          levelTypes: ["General"],
           genderAdmissionPolicies: genderOptions,
         };
     }
@@ -325,34 +322,24 @@ export class OnboardingService {
   async saveBuildDetails(userId: string, dto: SaveBuildDetailsDto) {
     await this.ensureVerifiedUser(userId);
 
-    const learningModes = [
-      ...new Set(
-        (dto.learningModes ?? []).map((item) => item.trim().toUpperCase())
-      ),
-    ].filter(Boolean) as LearningMode[];
-
-    if (!learningModes.length) {
-      throw new BadRequestException("At least one learning mode is required");
-    }
-
     const onboarding = await this.prisma.userOnboarding.upsert({
       where: { userId },
       create: {
         userId,
         route: OnboardingRoute.BUILD_INSTITUTION,
         currentStep: "details",
-        learningModesDraft: learningModes,
-        ownershipDraft: dto.ownership.trim(),
-        levelTypeDraft: dto.levelType.trim(),
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy,
+        learningModesDraft: dto.learningModes,
+        ownershipDraft: dto.ownership?.trim() || null,
+        levelTypeDraft: dto.levelType?.trim() || null,
+        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
       },
       update: {
         route: OnboardingRoute.BUILD_INSTITUTION,
         currentStep: "details",
-        learningModesDraft: learningModes,
-        ownershipDraft: dto.ownership.trim(),
-        levelTypeDraft: dto.levelType.trim(),
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy,
+        learningModesDraft: dto.learningModes,
+        ownershipDraft: dto.ownership?.trim() || null,
+        levelTypeDraft: dto.levelType?.trim() || null,
+        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
       },
     });
 

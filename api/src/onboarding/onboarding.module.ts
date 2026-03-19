@@ -1,12 +1,12 @@
-import { Module, forwardRef } from "@nestjs/common";
+import { Module } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { SchoolsModule } from "../schools/schools.module";
+import { SmsService } from "../shared/sms/sms.service";
 import { OnboardingController } from "./onboarding.controller";
 import { OnboardingService } from "./onboarding.service";
-import { PrismaService } from "../prisma/prisma.service";
-import { SmsService } from "../shared/sms/sms.service";
-import { SchoolsModule } from "../schools/schools.module";
 
 @Module({
-  imports: [forwardRef(() => SchoolsModule)],
+  imports: [SchoolsModule],
   controllers: [OnboardingController],
   providers: [OnboardingService, PrismaService, SmsService],
   exports: [OnboardingService],
