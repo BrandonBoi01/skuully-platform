@@ -7,7 +7,9 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import {
   BranchRole,
+  GenderAdmissionPolicy,
   InstitutionType,
+  LearningMode,
   OrgRole,
   Prisma,
   SchoolRole,
@@ -24,10 +26,6 @@ export class SchoolsService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService
   ) {}
-
-  // =========================================================
-  // MY SCHOOLS
-  // =========================================================
 
   async mySchools(userId: string) {
     const memberships = await this.prisma.schoolMembership.findMany({
@@ -51,9 +49,38 @@ export class SchoolsService {
     }));
   }
 
-  // =========================================================
-  // CREATE SCHOOL WORKSPACE
-  // =========================================================
+  private normalizeLearningModes(input?: LearningMode[] | string[] | null): LearningMode[] {
+    if (!input?.length) return [];
+
+    const valid = new Set<LearningMode>(Object.values(LearningMode));
+
+    return [
+      ...new Set(
+        input
+          .map((value) =>
+            String(value).trim().toUpperCase().replace(/[\s-]+/g, "_")
+          )
+          .filter(
+            (value): value is LearningMode =>
+              Boolean(value) && valid.has(value as LearningMode)
+          )
+      ),
+    ];
+  }
+
+  private normalizeGenderAdmissionPolicy(
+    input?: GenderAdmissionPolicy | string | null
+  ): GenderAdmissionPolicy | null {
+    if (!input) return null;
+
+    const normalized = String(input).trim().toUpperCase().replace(/[\s-]+/g, "_");
+
+    if (normalized === "BOYS_ONLY") return GenderAdmissionPolicy.BOYS_ONLY;
+    if (normalized === "GIRLS_ONLY") return GenderAdmissionPolicy.GIRLS_ONLY;
+    if (normalized === "MIXED") return GenderAdmissionPolicy.MIXED;
+
+    return null;
+  }
 
   async createSchoolWorkspace(userId: string, dto: CreateSchoolDto) {
     return this.createSchool(userId, dto);
@@ -80,7 +107,7 @@ export class SchoolsService {
 
     const name = dto.name?.trim();
     const country = dto.country?.trim();
-    const countryCode = dto.countryCode?.trim() || null;
+    const countryCode = dto.countryCode?.trim()?.toUpperCase() || null;
     const institutionType = dto.institutionType ?? InstitutionType.SCHOOL;
     const organizationName = dto.organizationName?.trim() || name;
     const branchName = dto.branchName?.trim() || "Main Campus";
@@ -106,7 +133,12 @@ export class SchoolsService {
         ? uniqueAcademicItems[0]
         : null;
 
-    const learningMode = dto.institutionProfile?.learningMode?.trim() || null;
+    const learningModes = this.normalizeLearningModes(
+      dto.institutionProfile?.learningModes
+    );
+    const genderAdmissionPolicy = this.normalizeGenderAdmissionPolicy(
+      dto.institutionProfile?.genderAdmissionPolicy
+    );
     const ownership = dto.institutionProfile?.ownership?.trim() || null;
     const levelType = dto.institutionProfile?.levelType?.trim() || null;
 
@@ -167,7 +199,8 @@ export class SchoolsService {
             countryCode,
             curriculum: primaryAcademicItem,
             institutionType,
-            learningMode,
+            learningModes,
+            genderAdmissionPolicy,
             ownership,
             levelType,
             primaryPhone,
@@ -227,12 +260,13 @@ export class SchoolsService {
             academicLabelDraft: academicLabel,
             academicItemsDraft: uniqueAcademicItems,
             academicSetLater: academicSetUpLater,
-            learningModeDraft: learningMode,
+            learningModesDraft: learningModes,
+            genderAdmissionPolicyDraft: genderAdmissionPolicy,
             ownershipDraft: ownership,
             levelTypeDraft: levelType,
             phoneCountryCodeDraft:
               !addPhoneLater && phonePayload?.countryCode
-                ? phonePayload.countryCode.trim()
+                ? phonePayload.countryCode.trim().toUpperCase()
                 : null,
             phoneDialCodeDraft:
               !addPhoneLater && phonePayload?.dialCode
@@ -256,12 +290,13 @@ export class SchoolsService {
             academicLabelDraft: academicLabel,
             academicItemsDraft: uniqueAcademicItems,
             academicSetLater: academicSetUpLater,
-            learningModeDraft: learningMode,
+            learningModesDraft: learningModes,
+            genderAdmissionPolicyDraft: genderAdmissionPolicy,
             ownershipDraft: ownership,
             levelTypeDraft: levelType,
             phoneCountryCodeDraft:
               !addPhoneLater && phonePayload?.countryCode
-                ? phonePayload.countryCode.trim()
+                ? phonePayload.countryCode.trim().toUpperCase()
                 : null,
             phoneDialCodeDraft:
               !addPhoneLater && phonePayload?.dialCode
@@ -317,10 +352,6 @@ export class SchoolsService {
     };
   }
 
-  // =========================================================
-  // SWITCH SCHOOL
-  // =========================================================
-
   async switchSchool(userId: string, schoolId: string) {
     const membership = await this.prisma.schoolMembership.findFirst({
       where: {
@@ -358,10 +389,6 @@ export class SchoolsService {
     };
   }
 
-  // =========================================================
-  // ACTIVE SCHOOL CONTEXT
-  // =========================================================
-
   async activeContext(
     userId: string,
     schoolId?: string | null,
@@ -391,10 +418,6 @@ export class SchoolsService {
       },
     };
   }
-
-  // =========================================================
-  // INVITE STAFF
-  // =========================================================
 
   async inviteStaff(
     schoolId: string,
@@ -496,10 +519,6 @@ export class SchoolsService {
       invite,
     };
   }
-
-  // =========================================================
-  // ACCEPT INVITE (PUBLIC)
-  // =========================================================
 
   async acceptInvite(code: string, fullName: string, password: string) {
     const normalizedCode = code.trim();
@@ -657,10 +676,6 @@ export class SchoolsService {
     };
   }
 
-  // =========================================================
-  // LIST INVITES
-  // =========================================================
-
   async listInvites(schoolId: string) {
     if (!schoolId) {
       throw new ForbiddenException(
@@ -683,10 +698,6 @@ export class SchoolsService {
     });
   }
 
-  // =========================================================
-  // HELPERS
-  // =========================================================
-
   private schoolSelect(): Prisma.SchoolSelect {
     return {
       id: true,
@@ -696,7 +707,8 @@ export class SchoolsService {
       county: true,
       curriculum: true,
       institutionType: true,
-      learningMode: true,
+      learningModes: true,
+      genderAdmissionPolicy: true,
       ownership: true,
       levelType: true,
       primaryPhone: true,

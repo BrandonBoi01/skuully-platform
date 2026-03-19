@@ -1,19 +1,11 @@
-// src/auth/school-context.guard.ts
 import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { SchoolRole } from "@prisma/client";
-
-type RequestUser = {
-  userId?: string;
-  schoolId?: string | null;
-  role?: SchoolRole | null;
-  membershipId?: string | null;
-};
 
 @Injectable()
 export class SchoolContextGuard implements CanActivate {
@@ -21,44 +13,38 @@ export class SchoolContextGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    const user = req.user as RequestUser;
+    const user = req.user;
 
     if (!user?.userId) {
-      throw new ForbiddenException("Not authenticated.");
+      throw new UnauthorizedException("Authentication required");
     }
 
-    if (!user.schoolId) {
-      throw new ForbiddenException(
-        "No active school. Use POST /schools/switch/:schoolId first."
-      );
+    if (!user?.schoolId) {
+      throw new ForbiddenException("No active school selected");
     }
 
-    const membership = await this.prisma.schoolMembership.findUnique({
+    const membership = await this.prisma.schoolMembership.findFirst({
       where: {
-        userId_schoolId: {
-          userId: user.userId,
-          schoolId: user.schoolId,
-        },
+        userId: user.userId,
+        schoolId: user.schoolId,
+        status: "ACTIVE",
       },
       select: {
         id: true,
         role: true,
+        schoolId: true,
+        userId: true,
         status: true,
       },
     });
 
-    if (!membership || membership.status !== "ACTIVE") {
+    if (!membership) {
       throw new ForbiddenException(
-        "No active school membership. Use POST /schools/switch/:schoolId first."
+        "You are not an active member of this school"
       );
     }
 
-    req.user = {
-      ...user,
-      membershipId: membership.id,
-      role: membership.role,
-    };
-
+    req.schoolMembership = membership;
     return true;
   }
 }

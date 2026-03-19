@@ -168,9 +168,10 @@ model UserOnboarding {
   academicItemsDraft String[]
   academicSetLater   Boolean  @default(false)
 
-  learningModeDraft String?
-  ownershipDraft    String?
-  levelTypeDraft    String?
+  learningModesDraft         LearningMode[]
+  genderAdmissionPolicyDraft GenderAdmissionPolicy?
+  ownershipDraft             String?
+  levelTypeDraft             String?
 
   phoneCountryCodeDraft String?
   phoneDialCodeDraft    String?
@@ -244,9 +245,10 @@ model School {
 
   institutionType InstitutionType @default(SCHOOL)
 
-  learningMode String?
-  ownership    String?
-  levelType    String?
+  learningModes         LearningMode[]
+  genderAdmissionPolicy GenderAdmissionPolicy?
+  ownership             String?
+  levelType             String?
 
   primaryPhone    String?
   phoneVerifiedAt DateTime?
@@ -280,6 +282,7 @@ model School {
   @@index([branchId])
   @@index([institutionType])
   @@index([countryCode])
+  @@index([genderAdmissionPolicy])
 }
 
 model SchoolMembership {
@@ -289,12 +292,15 @@ model SchoolMembership {
   role      SchoolRole
   status    String     @default("ACTIVE")
   createdAt DateTime   @default(now())
-  school    School     @relation(fields: [schoolId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
+  updatedAt DateTime   @updatedAt
 
-  @@unique([userId, schoolId], name: "userId_schoolId")
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, schoolId], name: "unique_school_membership")
   @@index([schoolId])
   @@index([userId])
+  @@index([status])
 }
 
 model SchoolInvite {
@@ -795,12 +801,106 @@ model VisitorLog {
   @@index([deviceId])
 }
 
+model GeoCountry {
+  id                   String   @id @default(cuid())
+  code                 String   @unique
+  iso3                 String?  @unique
+  name                 String
+  officialName         String?
+  flagEmoji            String?
+  region               String?
+  subregion            String?
+  capital              String?
+  currencyCode         String?
+  currencyName         String?
+  phoneCode            String?
+  phoneMinLength       Int?
+  phoneMaxLength       Int?
+  nativeCurriculumName String?
+  nativeCurriculumCode String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  subdivisions GeoSubdivision[]
+  cities       GeoCity[]
+  timezones    GeoTimezone[]
+
+  @@index([name])
+  @@index([region])
+  @@index([subregion])
+  @@index([isActive])
+}
+
+model GeoSubdivision {
+  id        String   @id @default(cuid())
+  countryId String
+  code      String?
+  name      String
+  type      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  country GeoCountry @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  cities  GeoCity[]
+
+  @@unique([countryId, name])
+  @@index([countryId])
+  @@index([name])
+  @@index([countryId, code])
+}
+
+model GeoCity {
+  id            String   @id @default(cuid())
+  countryId     String
+  subdivisionId String?
+  name          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  country     GeoCountry      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  subdivision GeoSubdivision? @relation(fields: [subdivisionId], references: [id], onDelete: SetNull)
+
+  @@index([countryId])
+  @@index([subdivisionId])
+  @@index([name])
+  @@index([countryId, subdivisionId])
+  @@index([countryId, name])
+}
+
+model GeoTimezone {
+  id        String   @id @default(cuid())
+  countryId String
+  name      String
+  utcOffset String?
+  createdAt DateTime @default(now())
+
+  country GeoCountry @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([countryId, name])
+  @@index([countryId])
+}
+
 enum SchoolRole {
   OWNER
   ADMIN
   TEACHER
   ACCOUNTANT
   HR
+}
+
+enum GenderAdmissionPolicy {
+  BOYS_ONLY
+  GIRLS_ONLY
+  MIXED
+}
+
+enum LearningMode {
+  DAY
+  BOARDING
+  IN_PERSON
+  ONLINE
+  HYBRID
 }
 
 enum InstitutionType {

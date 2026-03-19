@@ -1,4 +1,3 @@
-import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -8,7 +7,12 @@ import {
   MinLength,
   ValidateNested,
 } from "class-validator";
-import { InstitutionType } from "@prisma/client";
+import { Type } from "class-transformer";
+import {
+  GenderAdmissionPolicy,
+  InstitutionType,
+  LearningMode,
+} from "@prisma/client";
 
 class AcademicSetupDto {
   @IsOptional()
@@ -27,8 +31,13 @@ class AcademicSetupDto {
 
 class InstitutionProfileDto {
   @IsOptional()
-  @IsString()
-  learningMode?: string;
+  @IsArray()
+  @IsEnum(LearningMode, { each: true })
+  learningModes?: LearningMode[];
+
+  @IsOptional()
+  @IsEnum(GenderAdmissionPolicy)
+  genderAdmissionPolicy?: GenderAdmissionPolicy;
 
   @IsOptional()
   @IsString()
