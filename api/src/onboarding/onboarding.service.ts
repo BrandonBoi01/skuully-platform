@@ -320,34 +320,37 @@ export class OnboardingService {
   }
 
   async saveBuildDetails(userId: string, dto: SaveBuildDetailsDto) {
-    await this.ensureVerifiedUser(userId);
+  await this.ensureVerifiedUser(userId);
 
-    const onboarding = await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "details",
-        learningModesDraft: dto.learningModes,
-        ownershipDraft: dto.ownership?.trim() || null,
-        levelTypeDraft: dto.levelType?.trim() || null,
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-      },
-      update: {
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "details",
-        learningModesDraft: dto.learningModes,
-        ownershipDraft: dto.ownership?.trim() || null,
-        levelTypeDraft: dto.levelType?.trim() || null,
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-      },
-    });
+        const ownership = dto.ownership?.trim() || null;
+        const levelType = dto.levelType?.trim() || null;
 
-    return {
-      message: "Details step saved",
-      currentStep: onboarding.currentStep,
-    };
-  }
+        const onboarding = await this.prisma.userOnboarding.upsert({
+            where: { userId },
+            create: {
+            userId,
+            route: OnboardingRoute.BUILD_INSTITUTION,
+            currentStep: "details",
+            learningModesDraft: dto.learningModes,
+            ownershipDraft: ownership,
+            levelTypeDraft: levelType,
+            genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+            },
+            update: {
+            route: OnboardingRoute.BUILD_INSTITUTION,
+            currentStep: "details",
+            learningModesDraft: dto.learningModes,
+            ownershipDraft: ownership,
+            levelTypeDraft: levelType,
+            genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+            },
+        });
+
+        return {
+            message: "Details step saved",
+            currentStep: onboarding.currentStep,
+        };
+        }
 
   async sendPhoneCode(userId: string, dto: SendPhoneCodeDto) {
     await this.ensureVerifiedUser(userId);
@@ -578,8 +581,8 @@ export class OnboardingService {
         ownership: onboarding.ownershipDraft ?? undefined,
         levelType: onboarding.levelTypeDraft ?? undefined,
         genderAdmissionPolicy:
-          onboarding.genderAdmissionPolicyDraft ?? GenderAdmissionPolicy.MIXED,
-      },
+            onboarding.genderAdmissionPolicyDraft ?? undefined,
+        },
       security: {
         addPhoneLater: onboarding.phoneSetLater,
         phone:
