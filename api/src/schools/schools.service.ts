@@ -37,48 +37,7 @@ export class SchoolsService {
       },
       include: {
         school: {
-          select: {
-            id: true,
-            name: true,
-            country: true,
-            countryCode: true,
-            county: true,
-            curriculum: true,
-            institutionType: true,
-            learningMode: true,
-            ownership: true,
-            levelType: true,
-            primaryPhone: true,
-            phoneVerifiedAt: true,
-            onboardingCompletedAt: true,
-            organizationId: true,
-            branchId: true,
-            createdAt: true,
-            updatedAt: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            organization: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            academicFrameworks: {
-              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                code: true,
-                category: true,
-                isPrimary: true,
-                sortOrder: true,
-              },
-            },
-          },
+          select: this.schoolSelect(),
         },
       },
       orderBy: [{ createdAt: "desc" }],
@@ -141,6 +100,7 @@ export class SchoolsService {
       .filter(Boolean);
 
     const uniqueAcademicItems = [...new Set(selectedAcademicItems)];
+
     const primaryAcademicItem =
       !academicSetUpLater && uniqueAcademicItems.length > 0
         ? uniqueAcademicItems[0]
@@ -156,6 +116,8 @@ export class SchoolsService {
       !addPhoneLater && phonePayload?.e164?.trim()
         ? phonePayload.e164.trim()
         : null;
+
+    const now = new Date();
 
     const result = await this.prisma.$transaction(
       async (tx) => {
@@ -210,28 +172,12 @@ export class SchoolsService {
             levelType,
             primaryPhone,
             phoneVerifiedAt: null,
-            onboardingCompletedAt: new Date(),
+            onboardingCompletedAt: now,
             organizationId: organization.id,
             branchId: branch.id,
           },
           select: {
             id: true,
-            name: true,
-            country: true,
-            countryCode: true,
-            county: true,
-            curriculum: true,
-            institutionType: true,
-            learningMode: true,
-            ownership: true,
-            levelType: true,
-            primaryPhone: true,
-            phoneVerifiedAt: true,
-            onboardingCompletedAt: true,
-            organizationId: true,
-            branchId: true,
-            createdAt: true,
-            updatedAt: true,
           },
         });
 
@@ -254,7 +200,7 @@ export class SchoolsService {
             data: uniqueAcademicItems.map((label, index) => ({
               schoolId: school.id,
               label,
-              code: null,
+              code: this.frameworkCodeFromLabel(label),
               category: academicLabel,
               isPrimary: index === 0,
               sortOrder: index,
@@ -265,7 +211,7 @@ export class SchoolsService {
         await tx.user.update({
           where: { id: userId },
           data: {
-            onboardingCompletedAt: new Date(),
+            onboardingCompletedAt: now,
           },
         });
 
@@ -299,7 +245,7 @@ export class SchoolsService {
             phoneE164Draft: primaryPhone,
             phoneSetLater: addPhoneLater,
             currentStep: "review",
-            completedAt: new Date(),
+            completedAt: now,
           },
           update: {
             route: "BUILD_INSTITUTION",
@@ -328,54 +274,13 @@ export class SchoolsService {
             phoneE164Draft: primaryPhone,
             phoneSetLater: addPhoneLater,
             currentStep: "review",
-            completedAt: new Date(),
+            completedAt: now,
           },
         });
 
         const hydratedSchool = await tx.school.findUnique({
           where: { id: school.id },
-          select: {
-            id: true,
-            name: true,
-            country: true,
-            countryCode: true,
-            county: true,
-            curriculum: true,
-            institutionType: true,
-            learningMode: true,
-            ownership: true,
-            levelType: true,
-            primaryPhone: true,
-            phoneVerifiedAt: true,
-            onboardingCompletedAt: true,
-            organizationId: true,
-            branchId: true,
-            createdAt: true,
-            updatedAt: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            organization: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            academicFrameworks: {
-              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                code: true,
-                category: true,
-                isPrimary: true,
-                sortOrder: true,
-              },
-            },
-          },
+          select: this.schoolSelect(),
         });
 
         return {
@@ -425,48 +330,7 @@ export class SchoolsService {
       },
       include: {
         school: {
-          select: {
-            id: true,
-            name: true,
-            country: true,
-            countryCode: true,
-            county: true,
-            curriculum: true,
-            institutionType: true,
-            learningMode: true,
-            ownership: true,
-            levelType: true,
-            primaryPhone: true,
-            phoneVerifiedAt: true,
-            onboardingCompletedAt: true,
-            organizationId: true,
-            branchId: true,
-            createdAt: true,
-            updatedAt: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            organization: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            academicFrameworks: {
-              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                code: true,
-                category: true,
-                isPrimary: true,
-                sortOrder: true,
-              },
-            },
-          },
+          select: this.schoolSelect(),
         },
       },
     });
@@ -512,48 +376,7 @@ export class SchoolsService {
 
     const school = await this.prisma.school.findUnique({
       where: { id: schoolId },
-      select: {
-        id: true,
-        name: true,
-        country: true,
-        countryCode: true,
-        county: true,
-        curriculum: true,
-        institutionType: true,
-        learningMode: true,
-        ownership: true,
-        levelType: true,
-        primaryPhone: true,
-        phoneVerifiedAt: true,
-        onboardingCompletedAt: true,
-        organizationId: true,
-        branchId: true,
-        createdAt: true,
-        updatedAt: true,
-        branch: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        organization: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        academicFrameworks: {
-          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-          select: {
-            id: true,
-            label: true,
-            code: true,
-            category: true,
-            isPrimary: true,
-            sortOrder: true,
-          },
-        },
-      },
+      select: this.schoolSelect(),
     });
 
     if (!school) {
@@ -589,6 +412,7 @@ export class SchoolsService {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+
     if (!normalizedEmail) {
       throw new ConflictException("Email is required");
     }
@@ -735,6 +559,7 @@ export class SchoolsService {
               email,
               passwordHash,
               skuullyId,
+              preferredLoginMethod: "EMAIL",
               onboardingCompletedAt: new Date(),
             },
           });
@@ -861,6 +686,84 @@ export class SchoolsService {
   // =========================================================
   // HELPERS
   // =========================================================
+
+  private schoolSelect(): Prisma.SchoolSelect {
+    return {
+      id: true,
+      name: true,
+      country: true,
+      countryCode: true,
+      county: true,
+      curriculum: true,
+      institutionType: true,
+      learningMode: true,
+      ownership: true,
+      levelType: true,
+      primaryPhone: true,
+      phoneVerifiedAt: true,
+      onboardingCompletedAt: true,
+      organizationId: true,
+      branchId: true,
+      createdAt: true,
+      updatedAt: true,
+      branch: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      academicFrameworks: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          label: true,
+          code: true,
+          category: true,
+          isPrimary: true,
+          sortOrder: true,
+        },
+      },
+    };
+  }
+
+  private frameworkCodeFromLabel(label: string): string | null {
+    const value = label.trim();
+    if (!value) return null;
+
+    const known: Record<string, string> = {
+      CBC: "KE_CBC",
+      "8-4-4": "KE_844",
+      "Cambridge Curriculum": "CAMBRIDGE",
+      "International Baccalaureate (IB)": "IB",
+      "American Curriculum": "US",
+      "British Curriculum": "BRITISH",
+      CBSE: "CBSE",
+      IGCSE: "IGCSE",
+      "Pearson Edexcel": "EDEXCEL",
+      Montessori: "MONTESSORI",
+      Waldorf: "WALDORF",
+      "Semester-based": "SEMESTER",
+      "Trimester-based": "TRIMESTER",
+      Modular: "MODULAR",
+      "Credit-hour system": "CREDIT_HOUR",
+      "Competency-based": "COMPETENCY_BASED",
+      "Outcome-based": "OUTCOME_BASED",
+      "Research-led": "RESEARCH_LED",
+      "Certification-based": "CERTIFICATION_BASED",
+      "Module-based": "MODULE_BASED",
+      "Workshop-led": "WORKSHOP_LED",
+      "Apprenticeship-aligned": "APPRENTICESHIP",
+      "Industry-aligned": "INDUSTRY_ALIGNED",
+    };
+
+    return known[value] ?? null;
+  }
 
   private async generateUniqueSkuullyId(
     tx: Prisma.TransactionClient | PrismaService,
