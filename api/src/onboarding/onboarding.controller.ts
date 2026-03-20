@@ -3,9 +3,11 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
+
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { OnboardingService } from "./onboarding.service";
 import { SetOnboardingRouteDto } from "./dto/set-onboarding-route.dto";
@@ -18,29 +20,29 @@ import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
 @Controller("onboarding")
 @UseGuards(JwtAuthGuard)
 export class OnboardingController {
-  constructor(private readonly onboarding: OnboardingService) {}
+  constructor(private readonly onboardingService: OnboardingService) {}
 
   @Get("me")
   getMyOnboarding(@Req() req: any) {
-    return this.onboarding.getMyOnboarding(req.user.userId);
+    return this.onboardingService.getMyOnboarding(req.user.id);
   }
 
   @Post("route")
   setRoute(@Req() req: any, @Body() dto: SetOnboardingRouteDto) {
-    return this.onboarding.setRoute(req.user.userId, dto);
+    return this.onboardingService.setRoute(req.user.id, dto);
   }
 
   @Post("build/identity")
   saveBuildIdentity(@Req() req: any, @Body() dto: SaveBuildIdentityDto) {
-    return this.onboarding.saveBuildIdentity(req.user.userId, dto);
+    return this.onboardingService.saveBuildIdentity(req.user.id, dto);
   }
 
   @Get("build/academic-options")
-  getAcademicOptions(@Req() req: any) {
-    const institutionType = req.query.institutionType;
-    const countryCode = req.query.countryCode;
-
-    return this.onboarding.getAcademicOptions(
+  getAcademicOptions(
+    @Query("institutionType") institutionType: string,
+    @Query("countryCode") countryCode: string
+  ) {
+    return this.onboardingService.getAcademicOptions(
       institutionType,
       countryCode
     );
@@ -48,42 +50,41 @@ export class OnboardingController {
 
   @Post("build/academic")
   saveBuildAcademic(@Req() req: any, @Body() dto: SaveBuildAcademicDto) {
-    return this.onboarding.saveBuildAcademic(req.user.userId, dto);
+    return this.onboardingService.saveBuildAcademic(req.user.id, dto);
   }
 
   @Get("build/detail-options")
-  getDetailOptions(@Req() req: any) {
-    const institutionType = req.query.institutionType;
-    return this.onboarding.getDetailOptions(institutionType);
+  getDetailOptions(@Query("institutionType") institutionType: string) {
+    return this.onboardingService.getDetailOptions(institutionType);
   }
 
   @Post("build/details")
   saveBuildDetails(@Req() req: any, @Body() dto: SaveBuildDetailsDto) {
-    return this.onboarding.saveBuildDetails(req.user.userId, dto);
+    return this.onboardingService.saveBuildDetails(req.user.id, dto);
   }
 
   @Post("build/phone/send-code")
   sendPhoneCode(@Req() req: any, @Body() dto: SendPhoneCodeDto) {
-    return this.onboarding.sendPhoneCode(req.user.userId, dto);
+    return this.onboardingService.sendPhoneCode(req.user.id, dto);
   }
 
-  @Post("build/phone/verify-code")
+  @Post("build/phone/verify")
   verifyPhoneCode(@Req() req: any, @Body() dto: VerifyPhoneCodeDto) {
-    return this.onboarding.verifyPhoneCode(req.user.userId, dto);
+    return this.onboardingService.verifyPhoneCode(req.user.id, dto);
   }
 
   @Post("build/phone/skip")
   skipPhone(@Req() req: any) {
-    return this.onboarding.skipPhone(req.user.userId);
+    return this.onboardingService.skipPhone(req.user.id);
   }
 
   @Get("build/review")
   getBuildReview(@Req() req: any) {
-    return this.onboarding.getBuildReview(req.user.userId);
+    return this.onboardingService.getBuildReview(req.user.id);
   }
 
   @Post("build/complete")
   completeBuildInstitution(@Req() req: any) {
-    return this.onboarding.completeBuildInstitution(req.user.userId);
+    return this.onboardingService.completeBuildInstitution(req.user.id);
   }
 }

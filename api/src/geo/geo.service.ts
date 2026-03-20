@@ -1,14 +1,18 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+
 import { PrismaService } from "../prisma/prisma.service";
+import { ListCountriesDto } from "./dto/list-countries.dto";
+import { ListSubdivisionsDto } from "./dto/list-subdivisions.dto";
+import { ListCitiesDto } from "./dto/list-cities.dto";
 
 @Injectable()
 export class GeoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listCountries(params?: { q?: string; activeOnly?: boolean }) {
-    const q = params?.q?.trim();
-    const activeOnly = params?.activeOnly ?? true;
+  async listCountries(query: ListCountriesDto) {
+    const q = query.q?.trim();
+    const activeOnly = query.activeOnly !== "false";
 
     const where: Prisma.GeoCountryWhereInput = {
       ...(activeOnly ? { isActive: true } : {}),
@@ -19,14 +23,9 @@ export class GeoService {
               { officialName: { contains: q, mode: "insensitive" } },
               { code: { contains: q.toUpperCase() } },
               { iso3: { contains: q.toUpperCase() } },
+              { nativeCurriculumName: { contains: q, mode: "insensitive" } },
               { region: { contains: q, mode: "insensitive" } },
               { subregion: { contains: q, mode: "insensitive" } },
-              {
-                nativeCurriculumName: {
-                  contains: q,
-                  mode: "insensitive",
-                },
-              },
             ],
           }
         : {}),
@@ -103,9 +102,9 @@ export class GeoService {
     return country;
   }
 
-  async listSubdivisions(countryCode: string, params?: { q?: string }) {
+  async listSubdivisions(countryCode: string, query: ListSubdivisionsDto) {
     const normalized = countryCode.trim().toUpperCase();
-    const q = params?.q?.trim();
+    const q = query.q?.trim();
 
     const country = await this.prisma.geoCountry.findUnique({
       where: { code: normalized },
@@ -123,7 +122,7 @@ export class GeoService {
           ? {
               OR: [
                 { name: { contains: q, mode: "insensitive" } },
-                { code: { contains: q.toUpperCase() } },
+                { code: { contains: q, mode: "insensitive" } },
                 { type: { contains: q, mode: "insensitive" } },
               ],
             }
@@ -145,13 +144,9 @@ export class GeoService {
     };
   }
 
-  async listCities(
-    countryCode: string,
-    params?: { q?: string; subdivisionId?: string }
-  ) {
+  async listCities(countryCode: string, query: ListCitiesDto) {
     const normalized = countryCode.trim().toUpperCase();
-    const q = params?.q?.trim();
-    const subdivisionId = params?.subdivisionId?.trim() || undefined;
+    const q = query.q?.trim();
 
     const country = await this.prisma.geoCountry.findUnique({
       where: { code: normalized },
@@ -165,7 +160,7 @@ export class GeoService {
     const items = await this.prisma.geoCity.findMany({
       where: {
         countryId: country.id,
-        ...(subdivisionId ? { subdivisionId } : {}),
+        ...(query.subdivisionId ? { subdivisionId: query.subdivisionId } : {}),
         ...(q
           ? {
               name: { contains: q, mode: "insensitive" },
@@ -186,7 +181,6 @@ export class GeoService {
           },
         },
       },
-      take: 200,
     });
 
     return {
@@ -196,17 +190,18 @@ export class GeoService {
     };
   }
 
-  async getPhoneCountries() {
+  async listPhoneCountries() {
     const items = await this.prisma.geoCountry.findMany({
       where: {
         isActive: true,
-        phoneCode: { not: null },
+        phoneCode: {
+          not: null,
+        },
       },
       orderBy: [{ name: "asc" }],
       select: {
         id: true,
         code: true,
-        iso3: true,
         name: true,
         flagEmoji: true,
         phoneCode: true,
