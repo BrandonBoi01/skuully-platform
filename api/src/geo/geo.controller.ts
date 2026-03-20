@@ -1,17 +1,17 @@
-import { Controller, Get, Param, Query } from "@nestjs/common";
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { GeoService } from "./geo.service";
-import { ListCountriesDto } from "./dto/list-countries.dto";
-import { ListSubdivisionsDto } from "./dto/list-subdivisions.dto";
-import { ListCitiesDto } from "./dto/list-cities.dto";
+import { ListCountriesQueryDto } from "./dto/list-countries-query.dto";
 
+@UseGuards(JwtAuthGuard)
 @Controller("geo")
 export class GeoController {
   constructor(private readonly geoService: GeoService) {}
 
   @Get("countries")
-  listCountries(@Query() query: ListCountriesDto) {
-    return this.geoService.listCountries(query);
+  listCountries(@Query() dto: ListCountriesQueryDto) {
+    return this.geoService.listCountries(dto);
   }
 
   @Get("countries/phone")
@@ -19,21 +19,16 @@ export class GeoController {
     return this.geoService.listPhoneCountries();
   }
 
-  @Get("countries/:code")
-  getCountryByCode(@Param("code") code: string) {
-    return this.geoService.getCountryByCode(code);
+  @Get("subdivisions")
+  listSubdivisions(@Query("countryCode") countryCode: string) {
+    return this.geoService.listSubdivisions(countryCode);
   }
 
-  @Get("countries/:code/subdivisions")
-  listSubdivisions(
-    @Param("code") code: string,
-    @Query() query: ListSubdivisionsDto
+  @Get("cities")
+  listCities(
+    @Query("countryCode") countryCode: string,
+    @Query("subdivisionCode") subdivisionCode?: string
   ) {
-    return this.geoService.listSubdivisions(code, query);
-  }
-
-  @Get("countries/:code/cities")
-  listCities(@Param("code") code: string, @Query() query: ListCitiesDto) {
-    return this.geoService.listCities(code, query);
+    return this.geoService.listCities(countryCode, subdivisionCode);
   }
 }

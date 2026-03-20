@@ -1,13 +1,12 @@
 import { Module } from "@nestjs/common";
 
-import { PrismaModule } from "../prisma/prisma.module";
+import { PrismaService } from "../prisma/prisma.service";
 import { GeoController } from "./geo.controller";
 import { GeoService } from "./geo.service";
 
 @Module({
-  imports: [PrismaModule],
   controllers: [GeoController],
-  providers: [GeoService],
+  providers: [GeoService, PrismaService],
   exports: [GeoService],
 })
 export class GeoModule {}

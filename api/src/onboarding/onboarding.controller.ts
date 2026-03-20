@@ -17,24 +17,24 @@ import { SaveBuildDetailsDto } from "./dto/save-build-details.dto";
 import { SendPhoneCodeDto } from "./dto/send-phone-code.dto";
 import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
 
-@Controller("onboarding")
 @UseGuards(JwtAuthGuard)
+@Controller("onboarding")
 export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
   @Get("me")
   getMyOnboarding(@Req() req: any) {
-    return this.onboardingService.getMyOnboarding(req.user.id);
+    return this.onboardingService.getMyOnboarding(req.user.sub);
   }
 
   @Post("route")
   setRoute(@Req() req: any, @Body() dto: SetOnboardingRouteDto) {
-    return this.onboardingService.setRoute(req.user.id, dto);
+    return this.onboardingService.setRoute(req.user.sub, dto);
   }
 
   @Post("build/identity")
   saveBuildIdentity(@Req() req: any, @Body() dto: SaveBuildIdentityDto) {
-    return this.onboardingService.saveBuildIdentity(req.user.id, dto);
+    return this.onboardingService.saveBuildIdentity(req.user.sub, dto);
   }
 
   @Get("build/academic-options")
@@ -50,7 +50,7 @@ export class OnboardingController {
 
   @Post("build/academic")
   saveBuildAcademic(@Req() req: any, @Body() dto: SaveBuildAcademicDto) {
-    return this.onboardingService.saveBuildAcademic(req.user.id, dto);
+    return this.onboardingService.saveBuildAcademic(req.user.sub, dto);
   }
 
   @Get("build/detail-options")
@@ -60,31 +60,31 @@ export class OnboardingController {
 
   @Post("build/details")
   saveBuildDetails(@Req() req: any, @Body() dto: SaveBuildDetailsDto) {
-    return this.onboardingService.saveBuildDetails(req.user.id, dto);
+    return this.onboardingService.saveBuildDetails(req.user.sub, dto);
   }
 
   @Post("build/phone/send-code")
   sendPhoneCode(@Req() req: any, @Body() dto: SendPhoneCodeDto) {
-    return this.onboardingService.sendPhoneCode(req.user.id, dto);
+    return this.onboardingService.sendPhoneCode(req.user.sub, dto);
   }
 
   @Post("build/phone/verify")
   verifyPhoneCode(@Req() req: any, @Body() dto: VerifyPhoneCodeDto) {
-    return this.onboardingService.verifyPhoneCode(req.user.id, dto);
+    return this.onboardingService.verifyPhoneCode(req.user.sub, dto);
   }
 
   @Post("build/phone/skip")
   skipPhone(@Req() req: any) {
-    return this.onboardingService.skipPhone(req.user.id);
+    return this.onboardingService.skipPhone(req.user.sub);
   }
 
   @Get("build/review")
   getBuildReview(@Req() req: any) {
-    return this.onboardingService.getBuildReview(req.user.id);
+    return this.onboardingService.getBuildReview(req.user.sub);
   }
 
   @Post("build/complete")
   completeBuildInstitution(@Req() req: any) {
-    return this.onboardingService.completeBuildInstitution(req.user.id);
+    return this.onboardingService.completeBuildInstitution(req.user.sub);
   }
 }

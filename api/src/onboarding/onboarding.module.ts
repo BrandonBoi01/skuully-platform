@@ -1,15 +1,15 @@
 import { Module } from "@nestjs/common";
 
-import { PrismaModule } from "../prisma/prisma.module";
+import { PrismaService } from "../prisma/prisma.service";
 import { SchoolsModule } from "../schools/schools.module";
-import { SharedModule } from "../shared/shared.module";
 import { OnboardingController } from "./onboarding.controller";
 import { OnboardingService } from "./onboarding.service";
+import { SmsService } from "../shared/sms/sms.service";
 
 @Module({
-  imports: [PrismaModule, SharedModule, SchoolsModule],
+  imports: [SchoolsModule],
   controllers: [OnboardingController],
-  providers: [OnboardingService],
+  providers: [OnboardingService, PrismaService, SmsService],
   exports: [OnboardingService],
 })
 export class OnboardingModule {}
