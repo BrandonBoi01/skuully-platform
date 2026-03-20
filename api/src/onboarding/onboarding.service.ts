@@ -154,11 +154,7 @@ export class OnboardingService {
                 category: "national",
                 recommended: true,
               },
-              {
-                label: "8-4-4",
-                code: "KE_844",
-                category: "legacy",
-              },
+              { label: "8-4-4", code: "KE_844", category: "legacy" },
             ]
           : []),
         {
@@ -182,7 +178,11 @@ export class OnboardingService {
           category: "international",
         },
         { label: "CBSE", code: "CBSE", category: "international" },
-        { label: "Montessori", code: "MONTESSORI", category: "alternative" },
+        {
+          label: "Montessori",
+          code: "MONTESSORI",
+          category: "alternative",
+        },
       ];
 
       return {
@@ -193,7 +193,10 @@ export class OnboardingService {
       };
     }
 
-    if (type === InstitutionType.COLLEGE || type === InstitutionType.UNIVERSITY) {
+    if (
+      type === InstitutionType.COLLEGE ||
+      type === InstitutionType.UNIVERSITY
+    ) {
       return {
         label: "Academic frameworks",
         description:
@@ -269,13 +272,7 @@ export class OnboardingService {
     switch (type) {
       case InstitutionType.SCHOOL:
         return {
-          learningModes: [
-            LearningMode.DAY,
-            LearningMode.BOARDING,
-            LearningMode.IN_PERSON,
-            LearningMode.ONLINE,
-            LearningMode.HYBRID,
-          ],
+          learningModes: ["DAY", "BOARDING", "ONLINE", "HYBRID", "IN_PERSON"],
           ownerships: ["Private", "Public", "International"],
           levelTypes: ["Primary", "Secondary", "Combined"],
           genderAdmissionPolicies: genderOptions,
@@ -283,11 +280,7 @@ export class OnboardingService {
 
       case InstitutionType.COLLEGE:
         return {
-          learningModes: [
-            LearningMode.IN_PERSON,
-            LearningMode.ONLINE,
-            LearningMode.HYBRID,
-          ],
+          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
           ownerships: ["Private", "Public"],
           levelTypes: ["Certificate", "Diploma", "Mixed"],
           genderAdmissionPolicies: genderOptions,
@@ -295,11 +288,7 @@ export class OnboardingService {
 
       case InstitutionType.UNIVERSITY:
         return {
-          learningModes: [
-            LearningMode.IN_PERSON,
-            LearningMode.ONLINE,
-            LearningMode.HYBRID,
-          ],
+          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
           ownerships: ["Private", "Public"],
           levelTypes: ["Undergraduate", "Postgraduate", "Both"],
           genderAdmissionPolicies: genderOptions,
@@ -307,11 +296,7 @@ export class OnboardingService {
 
       default:
         return {
-          learningModes: [
-            LearningMode.IN_PERSON,
-            LearningMode.ONLINE,
-            LearningMode.HYBRID,
-          ],
+          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
           ownerships: ["Private", "Public"],
           levelTypes: ["General"],
           genderAdmissionPolicies: genderOptions,
@@ -320,42 +305,40 @@ export class OnboardingService {
   }
 
   async saveBuildDetails(userId: string, dto: SaveBuildDetailsDto) {
-  await this.ensureVerifiedUser(userId);
+    await this.ensureVerifiedUser(userId);
 
-        const ownership = dto.ownership?.trim() || null;
-        const levelType = dto.levelType?.trim() || null;
+    const onboarding = await this.prisma.userOnboarding.upsert({
+      where: { userId },
+      create: {
+        userId,
+        route: OnboardingRoute.BUILD_INSTITUTION,
+        currentStep: "details",
+        learningModesDraft: dto.learningModes,
+        ownershipDraft: dto.ownership?.trim() || null,
+        levelTypeDraft: dto.levelType?.trim() || null,
+        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+      },
+      update: {
+        route: OnboardingRoute.BUILD_INSTITUTION,
+        currentStep: "details",
+        learningModesDraft: dto.learningModes,
+        ownershipDraft: dto.ownership?.trim() || null,
+        levelTypeDraft: dto.levelType?.trim() || null,
+        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+      },
+    });
 
-        const onboarding = await this.prisma.userOnboarding.upsert({
-            where: { userId },
-            create: {
-            userId,
-            route: OnboardingRoute.BUILD_INSTITUTION,
-            currentStep: "details",
-            learningModesDraft: dto.learningModes,
-            ownershipDraft: ownership,
-            levelTypeDraft: levelType,
-            genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-            },
-            update: {
-            route: OnboardingRoute.BUILD_INSTITUTION,
-            currentStep: "details",
-            learningModesDraft: dto.learningModes,
-            ownershipDraft: ownership,
-            levelTypeDraft: levelType,
-            genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-            },
-        });
-
-        return {
-            message: "Details step saved",
-            currentStep: onboarding.currentStep,
-        };
-        }
+    return {
+      message: "Details step saved",
+      currentStep: onboarding.currentStep,
+    };
+  }
 
   async sendPhoneCode(userId: string, dto: SendPhoneCodeDto) {
     await this.ensureVerifiedUser(userId);
 
     const e164 = dto.e164.trim();
+
     if (!e164.startsWith("+")) {
       throw new BadRequestException("Phone number must be in E.164 format");
     }
@@ -441,7 +424,9 @@ export class OnboardingService {
     });
 
     if (!record) {
-      throw new BadRequestException("Invalid or expired phone verification code");
+      throw new BadRequestException(
+        "Invalid or expired phone verification code"
+      );
     }
 
     await this.prisma.$transaction([
@@ -470,6 +455,7 @@ export class OnboardingService {
 
     return {
       message: "Phone verified successfully",
+      verified: true,
       phoneVerified: true,
       phone: e164,
     };
@@ -581,8 +567,8 @@ export class OnboardingService {
         ownership: onboarding.ownershipDraft ?? undefined,
         levelType: onboarding.levelTypeDraft ?? undefined,
         genderAdmissionPolicy:
-            onboarding.genderAdmissionPolicyDraft ?? undefined,
-        },
+          onboarding.genderAdmissionPolicyDraft ?? GenderAdmissionPolicy.MIXED,
+      },
       security: {
         addPhoneLater: onboarding.phoneSetLater,
         phone:
@@ -595,7 +581,7 @@ export class OnboardingService {
                 e164: onboarding.phoneE164Draft,
               },
       },
-    });
+    } as any);
   }
 
   private async ensureUserExists(userId: string) {
