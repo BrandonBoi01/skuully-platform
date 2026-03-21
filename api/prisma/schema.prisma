@@ -68,6 +68,10 @@ model User {
   passwordHash String
   skuullyId    String  @unique
   avatarUrl    String?
+  firstName    String?
+  lastName     String?
+  googleId     String? @unique
+  appleId      String? @unique
 
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
@@ -79,6 +83,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  authProviders          AuthProviderAccount[]
   attendanceMarks        AttendanceMark[]
   attendanceSessions     AttendanceSession[]
   authAuditLogs          AuthAuditLog[]
@@ -103,6 +108,23 @@ model User {
   @@index([emailVerifiedAt])
   @@index([phoneVerifiedAt])
   @@index([onboardingCompletedAt])
+}
+
+model AuthProviderAccount {
+  id             String       @id @default(cuid())
+  userId         String
+  provider       AuthProvider
+  providerUserId String
+  email          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId], name: "unique_provider_provider_user")
+  @@unique([userId, provider], name: "unique_user_provider")
+  @@index([userId])
+  @@index([provider])
 }
 
 model PhoneVerificationCode {
@@ -879,6 +901,11 @@ model GeoTimezone {
 
   @@unique([countryId, name])
   @@index([countryId])
+}
+
+enum AuthProvider {
+  GOOGLE
+  APPLE
 }
 
 enum SchoolRole {

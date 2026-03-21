@@ -31,8 +31,10 @@ export class AuthService {
     private readonly sessionTokens: SessionTokenService
   ) {}
 
-  async register(dto: RegisterDto, req?: any) {
+    async register(dto: RegisterDto, req?: any) {
     const email = dto.email.trim().toLowerCase();
+    const fullName = this.normalizeFullName(dto.fullName);
+    const { firstName, lastName } = this.splitName(fullName);
     const { ipAddress, userAgent } = this.extractRequestMeta(req);
 
     const existing = await this.users.findByEmail(email);
@@ -51,19 +53,22 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const fullName = this.deriveNameFromEmail(email);
 
-    const user = await this.prisma.user.create({
+        const user = await this.prisma.user.create({
       data: {
         fullName,
+        firstName,
+        lastName,
         email,
         passwordHash,
         preferredLoginMethod: "EMAIL",
         skuullyId: await this.generateUniqueSkuullyId(this.prisma, fullName),
       },
-      select: {
+        select: {
         id: true,
         fullName: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         skuullyId: true,
@@ -131,9 +136,11 @@ export class AuthService {
           { phone: loweredIdentifier },
         ],
       },
-      select: {
+            select: {
         id: true,
         fullName: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         skuullyId: true,
@@ -218,6 +225,8 @@ export class AuthService {
       user: {
         id: user.id,
         fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         phone: user.phone,
         skuullyId: user.skuullyId,
@@ -237,6 +246,7 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
+        firstName: true,
         emailVerifiedAt: true,
       },
     });
@@ -340,6 +350,7 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
+        firstName: true,
         emailVerifiedAt: true,
       },
     });
@@ -406,6 +417,7 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
+        firstName: true,
       },
     });
 
@@ -488,6 +500,7 @@ export class AuthService {
             id: true,
             email: true,
             fullName: true,
+            firstName: true,
             passwordHash: true,
           },
         },
@@ -639,6 +652,8 @@ export class AuthService {
       select: {
         id: true,
         fullName: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         skuullyId: true,
@@ -712,15 +727,6 @@ export class AuthService {
     };
   }
 
-  private deriveNameFromEmail(email: string) {
-    const localPart = email.split("@")[0] || "user";
-
-    return localPart
-      .replace(/[._-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
   private normalizeLoginPhone(value: string) {
     const raw = value.trim();
     if (!raw) return null;
@@ -734,6 +740,25 @@ export class AuthService {
     return digits || null;
   }
 
+    private normalizeFullName(value: string) {
+    const fullName = value.replace(/\s+/g, " ").trim();
+
+    if (fullName.length < 2) {
+      throw new BadRequestException("Full name is required");
+    }
+
+    return fullName;
+  }
+
+  private splitName(fullName: string) {
+    const parts = fullName.split(" ").filter(Boolean);
+    const firstName = parts[0] ?? fullName;
+    const lastName =
+      parts.length > 1 ? parts.slice(1).join(" ") : null;
+
+    return { firstName, lastName };
+  }
+  
   private async generateUniqueSkuullyId(
     tx: Prisma.TransactionClient | PrismaService,
     fullName: string

@@ -42,7 +42,7 @@ export class EmailService {
           <p style="font-size:12px;letter-spacing:0.28em;text-transform:uppercase;color:#84a4ff;margin:0 0 16px">Skuully Verification</p>
           <h1 style="margin:0 0 12px;font-size:28px;line-height:1.2">Confirm your email</h1>
           <p style="margin:0 0 20px;color:rgba(255,255,255,0.72)">
-            Hi ${this.escapeHtml(input.fullName)}, use the verification code below to activate your account.
+            Hi ${this.escapeHtml(this.firstNameFromFullName(input.fullName))}, use the verification code below to activate your account.
           </p>
           <div style="font-size:32px;font-weight:700;letter-spacing:0.35em;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:18px 20px;text-align:center;margin:0 0 16px">
             ${this.escapeHtml(input.code)}
@@ -56,7 +56,7 @@ export class EmailService {
     const text = [
       `Verify your ${this.appName} email`,
       ``,
-      `Hi ${input.fullName},`,
+      `Hi ${this.firstNameFromFullName(input.fullName)},`,
       `Your verification code is: ${input.code}`,
       `This code expires in 10 minutes.`,
       `If you did not request this, you can ignore this email.`,
@@ -81,7 +81,7 @@ export class EmailService {
           <p style="font-size:12px;letter-spacing:0.28em;text-transform:uppercase;color:#84a4ff;margin:0 0 16px">Welcome</p>
           <h1 style="margin:0 0 12px;font-size:28px;line-height:1.2">Your account is ready</h1>
           <p style="margin:0 0 20px;color:rgba(255,255,255,0.72)">
-            Hi ${this.escapeHtml(input.fullName)}, your email has been verified and your ${this.appName} account is now active.
+            Hi ${this.escapeHtml(this.firstNameFromFullName(input.fullName))}, your email has been verified and your ${this.appName} account is now active.
           </p>
           <a href="${this.escapeHtml(
             this.appUrl
@@ -95,7 +95,7 @@ export class EmailService {
     const text = [
       `Welcome to ${this.appName}`,
       ``,
-      `Hi ${input.fullName},`,
+      `Hi ${this.firstNameFromFullName(input.fullName)},`,
       `Your email has been verified and your account is now active.`,
       `Open ${this.appUrl}`,
     ].join("\n");
@@ -155,6 +155,10 @@ export class EmailService {
     });
   }
 
+    private firstNameFromFullName(fullName?: string | null) {
+    return fullName?.trim()?.split(/\s+/)?.[0] || "there";
+  } 
+  
   private async send(input: {
     to: string;
     subject: string;
