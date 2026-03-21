@@ -67,7 +67,7 @@ model User {
   lastName     String?
   email        String  @unique
   phone        String? @unique
-  passwordHash String
+  passwordHash String?
   skuullyId    String  @unique
   avatarUrl    String?
 
@@ -1050,6 +1050,8 @@ enum LoginMethod {
   EMAIL
   PHONE
   SKUULLY_ID
+  GOOGLE
+  APPLE
 }
 
 enum VerificationPurpose {

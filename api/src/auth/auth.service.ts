@@ -4,9 +4,16 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma, VerificationPurpose } from "@prisma/client";
+import {
+  AuthProvider,
+  LoginMethod,
+  Prisma,
+  VerificationPurpose,
+} from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes, randomInt } from "crypto";
+import { OAuth2Client } from "google-auth-library";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 import { PrismaService } from "../prisma/prisma.service";
 import { UsersService } from "../users/users.service";
@@ -16,12 +23,30 @@ import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { ResendVerificationCodeDto } from "./dto/resend-verification-code.dto";
 import { RequestPasswordResetDto } from "./dto/request-password-reset.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
+import { SocialAuthDto } from "./dto/social-auth.dto";
 import { EmailService } from "./email.service";
 import { AuthAuditService } from "./auth-audit.service";
 import { SessionTokenService } from "./session-token.service";
 
+type SafeUser = {
+  id: string;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  phone: string | null;
+  skuullyId: string;
+  emailVerifiedAt: Date | null;
+  phoneVerifiedAt: Date | null;
+};
+
 @Injectable()
 export class AuthService {
+  private readonly googleClient = new OAuth2Client();
+  private readonly appleJwks = createRemoteJWKSet(
+    new URL("https://appleid.apple.com/auth/keys")
+  );
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
@@ -61,7 +86,7 @@ export class AuthService {
         lastName,
         email,
         passwordHash,
-        preferredLoginMethod: "EMAIL",
+        preferredLoginMethod: LoginMethod.EMAIL,
         skuullyId: await this.generateUniqueSkuullyId(this.prisma, fullName),
       },
       select: {
@@ -147,6 +172,11 @@ export class AuthService {
         passwordHash: true,
         emailVerifiedAt: true,
         phoneVerifiedAt: true,
+        authProviderAccounts: {
+          select: {
+            provider: true,
+          },
+        },
       },
     });
 
@@ -161,6 +191,28 @@ export class AuthService {
       });
 
       throw new UnauthorizedException("Invalid credentials");
+    }
+
+    if (!user.passwordHash) {
+      const providerLabels = user.authProviderAccounts.map((item) =>
+        item.provider === "GOOGLE" ? "Google" : "Apple"
+      );
+
+      await this.authAudit.log({
+        userId: user.id,
+        email: user.email,
+        event: "login_failed",
+        ipAddress,
+        userAgent,
+        success: false,
+        reason: "password_login_not_available",
+      });
+
+      throw new UnauthorizedException(
+        providerLabels.length
+          ? `This account uses ${providerLabels.join(" / ")} sign-in. Continue with your provider.`
+          : "This account does not have password login enabled."
+      );
     }
 
     const passwordOk = await bcrypt.compare(dto.password, user.passwordHash);
@@ -233,6 +285,51 @@ export class AuthService {
       },
       session,
     };
+  }
+
+  async googleSocialAuth(dto: SocialAuthDto, req?: any) {
+    const { ipAddress, userAgent } = this.extractRequestMeta(req);
+
+    const googleProfile = await this.verifyGoogleIdToken(dto.idToken);
+    const fullName =
+      this.normalizeOptionalFullName(dto.fullName) ??
+      this.normalizeOptionalFullName(googleProfile.name) ??
+      "Skuully User";
+
+    return this.handleSocialLogin(
+      {
+        provider: AuthProvider.GOOGLE,
+        providerUserId: googleProfile.sub,
+        email: googleProfile.email,
+        emailVerified: googleProfile.emailVerified,
+        fullName,
+        avatarUrl: googleProfile.picture ?? null,
+      },
+      { ipAddress, userAgent }
+    );
+  }
+
+  async appleSocialAuth(dto: SocialAuthDto, req?: any) {
+    const { ipAddress, userAgent } = this.extractRequestMeta(req);
+
+    const appleProfile = await this.verifyAppleIdToken(dto.idToken);
+    const fullName =
+      this.normalizeOptionalFullName(dto.fullName) ??
+      this.normalizeOptionalFullName(appleProfile.name) ??
+      this.nameFromEmail(appleProfile.email) ??
+      "Skuully User";
+
+    return this.handleSocialLogin(
+      {
+        provider: AuthProvider.APPLE,
+        providerUserId: appleProfile.sub,
+        email: appleProfile.email,
+        emailVerified: appleProfile.emailVerified,
+        fullName,
+        avatarUrl: null,
+      },
+      { ipAddress, userAgent }
+    );
   }
 
   async verifyEmail(dto: VerifyEmailDto, req?: any) {
@@ -418,6 +515,7 @@ export class AuthService {
         email: true,
         fullName: true,
         firstName: true,
+        passwordHash: true,
       },
     });
 
@@ -433,6 +531,12 @@ export class AuthService {
 
       return {
         message: "If that account exists, a reset link has been sent.",
+      };
+    }
+
+    if (!user.passwordHash) {
+      return {
+        message: "This account uses social sign-in. Continue with Google or Apple.",
       };
     }
 
@@ -517,6 +621,12 @@ export class AuthService {
       });
 
       throw new BadRequestException("This reset link is invalid or has expired");
+    }
+
+    if (!record.user.passwordHash) {
+      throw new BadRequestException(
+        "This account uses social sign-in and does not have a password yet"
+      );
     }
 
     const isSamePassword = await bcrypt.compare(
@@ -657,9 +767,15 @@ export class AuthService {
         email: true,
         phone: true,
         skuullyId: true,
+        preferredLoginMethod: true,
         emailVerifiedAt: true,
         phoneVerifiedAt: true,
         createdAt: true,
+        authProviderAccounts: {
+          select: {
+            provider: true,
+          },
+        },
         memberships: {
           where: { status: "ACTIVE" },
           orderBy: { createdAt: "desc" },
@@ -686,8 +802,283 @@ export class AuthService {
 
     return {
       ...user,
+      providers: user.authProviderAccounts.map((item) => item.provider),
       emailVerified: !!user.emailVerifiedAt,
       phoneVerified: !!user.phoneVerifiedAt,
+    };
+  }
+
+  private async handleSocialLogin(
+    input: {
+      provider: AuthProvider;
+      providerUserId: string;
+      email: string;
+      emailVerified: boolean;
+      fullName: string;
+      avatarUrl: string | null;
+    },
+    meta: {
+      ipAddress: string | null;
+      userAgent: string | null;
+    }
+  ) {
+    const email = input.email.trim().toLowerCase();
+
+    if (!email) {
+      throw new BadRequestException("A verified email is required");
+    }
+
+    const providerAccount = await this.prisma.authProviderAccount.findUnique({
+      where: {
+        unique_provider_provider_user: {
+          provider: input.provider,
+          providerUserId: input.providerUserId,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            skuullyId: true,
+            emailVerifiedAt: true,
+            phoneVerifiedAt: true,
+          },
+        },
+      },
+    });
+
+    let user: SafeUser;
+    let isNewUser = false;
+
+    if (providerAccount) {
+      user = providerAccount.user;
+    } else {
+      const existingByEmail = await this.prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          fullName: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          skuullyId: true,
+          emailVerifiedAt: true,
+          phoneVerifiedAt: true,
+        },
+      });
+
+      if (existingByEmail) {
+        await this.prisma.authProviderAccount.create({
+          data: {
+            userId: existingByEmail.id,
+            provider: input.provider,
+            providerUserId: input.providerUserId,
+            email,
+          },
+        });
+
+        await this.prisma.user.update({
+          where: { id: existingByEmail.id },
+          data: {
+            preferredLoginMethod:
+              input.provider === AuthProvider.GOOGLE
+                ? LoginMethod.GOOGLE
+                : LoginMethod.APPLE,
+            emailVerifiedAt:
+              input.emailVerified && !existingByEmail.emailVerifiedAt
+                ? new Date()
+                : existingByEmail.emailVerifiedAt ?? undefined,
+            avatarUrl: input.avatarUrl ?? undefined,
+          },
+        });
+
+        user = {
+          ...existingByEmail,
+          emailVerifiedAt:
+            existingByEmail.emailVerifiedAt ?? (input.emailVerified ? new Date() : null),
+        };
+      } else {
+        const { firstName, lastName } = this.splitName(
+          this.normalizeFullName(input.fullName)
+        );
+
+        user = await this.prisma.user.create({
+          data: {
+            fullName: this.normalizeFullName(input.fullName),
+            firstName,
+            lastName,
+            email,
+            passwordHash: null,
+            avatarUrl: input.avatarUrl,
+            emailVerifiedAt: input.emailVerified ? new Date() : null,
+            preferredLoginMethod:
+              input.provider === AuthProvider.GOOGLE
+                ? LoginMethod.GOOGLE
+                : LoginMethod.APPLE,
+            skuullyId: await this.generateUniqueSkuullyId(
+              this.prisma,
+              input.fullName
+            ),
+            authProviderAccounts: {
+              create: {
+                provider: input.provider,
+                providerUserId: input.providerUserId,
+                email,
+              },
+            },
+          },
+          select: {
+            id: true,
+            fullName: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            skuullyId: true,
+            emailVerifiedAt: true,
+            phoneVerifiedAt: true,
+          },
+        });
+
+        isNewUser = true;
+      }
+    }
+
+    const latestMembership = await this.prisma.schoolMembership.findFirst({
+      where: {
+        userId: user.id,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        id: true,
+        role: true,
+        schoolId: true,
+      },
+    });
+
+    const session = await this.sessionTokens.issueSession({
+      userId: user.id,
+      schoolId: latestMembership?.schoolId ?? null,
+      programId: null,
+      role: latestMembership?.role ?? null,
+      membershipId: latestMembership?.id ?? null,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+
+    await this.authAudit.log({
+      userId: user.id,
+      email: user.email,
+      event:
+        input.provider === AuthProvider.GOOGLE
+          ? "google_login_success"
+          : "apple_login_success",
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+      success: true,
+      meta: {
+        provider: input.provider,
+        linkedByEmail: !providerAccount,
+        isNewUser,
+      },
+    });
+
+    return {
+      message: "Signed in successfully",
+      requiresEmailVerification: false,
+      emailVerified: true,
+      isNewUser,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        skuullyId: user.skuullyId,
+      },
+      session,
+    };
+  }
+
+  private async verifyGoogleIdToken(idToken: string) {
+    const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+
+    if (!clientId) {
+      throw new BadRequestException("GOOGLE_CLIENT_ID is not configured");
+    }
+
+    let ticket;
+    try {
+      ticket = await this.googleClient.verifyIdToken({
+        idToken,
+        audience: clientId,
+      });
+    } catch {
+      throw new UnauthorizedException("Invalid Google token");
+    }
+
+    const payload = ticket.getPayload();
+
+    if (!payload?.sub || !payload.email) {
+      throw new UnauthorizedException("Invalid Google account data");
+    }
+
+    return {
+      sub: payload.sub,
+      email: payload.email.toLowerCase(),
+      emailVerified: !!payload.email_verified,
+      name: payload.name ?? null,
+      picture: payload.picture ?? null,
+    };
+  }
+
+  private async verifyAppleIdToken(idToken: string) {
+    const appleClientId = process.env.APPLE_CLIENT_ID?.trim();
+
+    if (!appleClientId) {
+      throw new BadRequestException("APPLE_CLIENT_ID is not configured");
+    }
+
+    let verified;
+    try {
+      verified = await jwtVerify(idToken, this.appleJwks, {
+        issuer: "https://appleid.apple.com",
+        audience: appleClientId,
+      });
+    } catch {
+      throw new UnauthorizedException("Invalid Apple token");
+    }
+
+    const payload = verified.payload;
+
+    const sub = typeof payload.sub === "string" ? payload.sub : null;
+    const email = typeof payload.email === "string" ? payload.email : null;
+    const emailVerifiedRaw =
+      typeof payload.email_verified === "string"
+        ? payload.email_verified
+        : payload.email_verified === true
+        ? "true"
+        : "false";
+
+    if (!sub || !email) {
+      throw new UnauthorizedException("Invalid Apple account data");
+    }
+
+    return {
+      sub,
+      email: email.toLowerCase(),
+      emailVerified: emailVerifiedRaw === "true",
+      name: null,
     };
   }
 
@@ -750,12 +1141,30 @@ export class AuthService {
     return fullName;
   }
 
+  private normalizeOptionalFullName(value?: string | null) {
+    if (!value) return null;
+    const normalized = value.replace(/\s+/g, " ").trim();
+    return normalized.length >= 2 ? normalized : null;
+  }
+
   private splitName(fullName: string) {
     const parts = fullName.split(" ").filter(Boolean);
     const firstName = parts[0] ?? fullName;
     const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
 
     return { firstName, lastName };
+  }
+
+  private nameFromEmail(email?: string | null) {
+    if (!email) return null;
+
+    const localPart = email.split("@")[0] || "user";
+    const normalized = localPart
+      .replace(/[._-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return normalized.length >= 2 ? normalized : null;
   }
 
   private async generateUniqueSkuullyId(

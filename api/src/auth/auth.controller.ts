@@ -19,6 +19,7 @@ import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { ResendVerificationCodeDto } from "./dto/resend-verification-code.dto";
 import { RequestPasswordResetDto } from "./dto/request-password-reset.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
+import { SocialAuthDto } from "./dto/social-auth.dto";
 import {
   clearAuthCookies,
   setAccessCookie,
@@ -73,10 +74,55 @@ export class AuthController {
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("social/google")
+  async googleSocialAuth(
+    @Body() dto: SocialAuthDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.auth.googleSocialAuth(dto, req);
+
+    setAccessCookie(res, result.session.accessToken);
+    setRefreshCookie(res, result.session.refreshToken);
+    setCsrfCookie(res, result.session.csrfToken);
+
+    return {
+      message: result.message,
+      requiresEmailVerification: result.requiresEmailVerification,
+      emailVerified: result.emailVerified,
+      isNewUser: result.isNewUser,
+      user: result.user,
+    };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("social/apple")
+  async appleSocialAuth(
+    @Body() dto: SocialAuthDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.auth.appleSocialAuth(dto, req);
+
+    setAccessCookie(res, result.session.accessToken);
+    setRefreshCookie(res, result.session.refreshToken);
+    setCsrfCookie(res, result.session.csrfToken);
+
+    return {
+      message: result.message,
+      requiresEmailVerification: result.requiresEmailVerification,
+      emailVerified: result.emailVerified,
+      isNewUser: result.isNewUser,
+      user: result.user,
+    };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("refresh")
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: Response) {
     const refreshToken =
-      req.cookies?.[REFRESH_COOKIE_NAME] ?? this.readRefreshCookie(req.headers?.cookie);
+      req.cookies?.[REFRESH_COOKIE_NAME] ??
+      this.readRefreshCookie(req.headers?.cookie);
 
     const result = await this.auth.refreshSession(refreshToken, req);
 
@@ -153,7 +199,8 @@ export class AuthController {
   @Post("sessions/revoke-others")
   async revokeOtherSessions(@Req() req: any) {
     const refreshToken =
-      req.cookies?.[REFRESH_COOKIE_NAME] ?? this.readRefreshCookie(req.headers?.cookie);
+      req.cookies?.[REFRESH_COOKIE_NAME] ??
+      this.readRefreshCookie(req.headers?.cookie);
 
     await this.auth.revokeOtherSessions(req.user.userId, refreshToken);
 
