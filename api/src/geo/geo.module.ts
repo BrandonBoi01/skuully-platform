@@ -1,8 +1,7 @@
 import { Module } from "@nestjs/common";
-
-import { PrismaService } from "../prisma/prisma.service";
 import { GeoController } from "./geo.controller";
 import { GeoService } from "./geo.service";
+import { PrismaService } from "../prisma/prisma.service";
 
 @Module({
   controllers: [GeoController],

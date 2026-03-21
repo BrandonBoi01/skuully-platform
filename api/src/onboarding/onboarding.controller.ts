@@ -7,8 +7,8 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import { AuthGuard } from "@nestjs/passport";
 
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { OnboardingService } from "./onboarding.service";
 import { SetOnboardingRouteDto } from "./dto/set-onboarding-route.dto";
 import { SaveBuildIdentityDto } from "./dto/save-build-identity.dto";
@@ -17,8 +17,8 @@ import { SaveBuildDetailsDto } from "./dto/save-build-details.dto";
 import { SendPhoneCodeDto } from "./dto/send-phone-code.dto";
 import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
 
-@UseGuards(JwtAuthGuard)
 @Controller("onboarding")
+@UseGuards(AuthGuard("jwt"))
 export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
@@ -63,17 +63,17 @@ export class OnboardingController {
     return this.onboardingService.saveBuildDetails(req.user.sub, dto);
   }
 
-  @Post("build/phone/send-code")
+  @Post("build/security/send-phone-code")
   sendPhoneCode(@Req() req: any, @Body() dto: SendPhoneCodeDto) {
     return this.onboardingService.sendPhoneCode(req.user.sub, dto);
   }
 
-  @Post("build/phone/verify")
+  @Post("build/security/verify-phone-code")
   verifyPhoneCode(@Req() req: any, @Body() dto: VerifyPhoneCodeDto) {
     return this.onboardingService.verifyPhoneCode(req.user.sub, dto);
   }
 
-  @Post("build/phone/skip")
+  @Post("build/security/skip")
   skipPhone(@Req() req: any) {
     return this.onboardingService.skipPhone(req.user.sub);
   }

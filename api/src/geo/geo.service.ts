@@ -1,90 +1,34 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { ListCountriesQueryDto } from "./dto/list-countries-query.dto";
 
 @Injectable()
 export class GeoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listCountries(dto: ListCountriesQueryDto) {
-    const q = dto.q?.trim();
+  async getCountries(search?: string) {
+    const query = search?.trim();
 
-    const where: Prisma.GeoCountryWhereInput = q
-      ? {
-          isActive: true,
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { officialName: { contains: q, mode: "insensitive" } },
-            { code: { contains: q, mode: "insensitive" } },
-            { iso3: { contains: q, mode: "insensitive" } },
-            { nativeCurriculumName: { contains: q, mode: "insensitive" } },
-            { region: { contains: q, mode: "insensitive" } },
-            { subregion: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : { isActive: true };
-
-    const items = await this.prisma.geoCountry.findMany({
-      where,
-      orderBy: [{ name: "asc" }],
-      select: {
-        id: true,
-        code: true,
-        iso3: true,
-        name: true,
-        officialName: true,
-        flagEmoji: true,
-        region: true,
-        subregion: true,
-        capital: true,
-        currencyCode: true,
-        currencyName: true,
-        phoneCode: true,
-        phoneMinLength: true,
-        phoneMaxLength: true,
-        nativeCurriculumName: true,
-        nativeCurriculumCode: true,
-        isActive: true,
-      },
-      take: 300,
-    });
-
-    return {
-      items,
-      total: items.length,
-    };
-  }
-
-  async listPhoneCountries() {
     const items = await this.prisma.geoCountry.findMany({
       where: {
         isActive: true,
-        phoneCode: {
-          not: null,
-        },
+        ...(query
+          ? {
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { code: { contains: query.toUpperCase() } },
+                {
+                  nativeCurriculumName: {
+                    contains: query,
+                    mode: "insensitive",
+                  },
+                },
+                { region: { contains: query, mode: "insensitive" } },
+                { subregion: { contains: query, mode: "insensitive" } },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ name: "asc" }],
-      select: {
-        id: true,
-        code: true,
-        iso3: true,
-        name: true,
-        officialName: true,
-        flagEmoji: true,
-        region: true,
-        subregion: true,
-        capital: true,
-        currencyCode: true,
-        currencyName: true,
-        phoneCode: true,
-        phoneMinLength: true,
-        phoneMaxLength: true,
-        nativeCurriculumName: true,
-        nativeCurriculumCode: true,
-        isActive: true,
-      },
     });
 
     return {
@@ -93,25 +37,76 @@ export class GeoService {
     };
   }
 
-  async listSubdivisions(countryCode: string) {
+  async getPhoneCountries(search?: string) {
+    const query = search?.trim();
+
+    const items = await this.prisma.geoCountry.findMany({
+      where: {
+        isActive: true,
+        phoneCode: { not: null },
+        ...(query
+          ? {
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { code: { contains: query.toUpperCase() } },
+                { phoneCode: { contains: query } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ name: "asc" }],
+    });
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  async getCountryByCode(code: string) {
     const country = await this.prisma.geoCountry.findUnique({
-      where: { code: countryCode.trim().toUpperCase() },
-      select: { id: true },
+      where: {
+        code: code.trim().toUpperCase(),
+      },
     });
 
     if (!country) {
-      return { items: [], total: 0 };
+      throw new NotFoundException("Country not found");
     }
 
-    const items = await this.prisma.geoSubdivision.findMany({
-      where: { countryId: country.id },
-      orderBy: [{ name: "asc" }],
+    return country;
+  }
+
+  async getSubdivisions(countryCode: string, search?: string) {
+    const country = await this.prisma.geoCountry.findUnique({
+      where: {
+        code: countryCode.trim().toUpperCase(),
+      },
       select: {
         id: true,
-        code: true,
-        name: true,
-        type: true,
       },
+    });
+
+    if (!country) {
+      throw new NotFoundException("Country not found");
+    }
+
+    const query = search?.trim();
+
+    const items = await this.prisma.geoSubdivision.findMany({
+      where: {
+        countryId: country.id,
+        ...(query
+          ? {
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { code: { contains: query.toUpperCase() } },
+                { type: { contains: query, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ name: "asc" }],
     });
 
     return {
@@ -120,14 +115,22 @@ export class GeoService {
     };
   }
 
-  async listCities(countryCode: string, subdivisionCode?: string) {
+  async getCities(
+    countryCode: string,
+    subdivisionCode?: string,
+    search?: string
+  ) {
     const country = await this.prisma.geoCountry.findUnique({
-      where: { code: countryCode.trim().toUpperCase() },
-      select: { id: true },
+      where: {
+        code: countryCode.trim().toUpperCase(),
+      },
+      select: {
+        id: true,
+      },
     });
 
     if (!country) {
-      return { items: [], total: 0 };
+      throw new NotFoundException("Country not found");
     }
 
     let subdivisionId: string | undefined;
@@ -136,26 +139,60 @@ export class GeoService {
       const subdivision = await this.prisma.geoSubdivision.findFirst({
         where: {
           countryId: country.id,
-          code: subdivisionCode.trim(),
+          code: subdivisionCode.trim().toUpperCase(),
         },
-        select: { id: true },
+        select: {
+          id: true,
+        },
       });
 
-      subdivisionId = subdivision?.id;
+      if (!subdivision) {
+        throw new NotFoundException("Subdivision not found");
+      }
+
+      subdivisionId = subdivision.id;
     }
+
+    const query = search?.trim();
 
     const items = await this.prisma.geoCity.findMany({
       where: {
         countryId: country.id,
         ...(subdivisionId ? { subdivisionId } : {}),
+        ...(query
+          ? {
+              name: { contains: query, mode: "insensitive" },
+            }
+          : {}),
       },
       orderBy: [{ name: "asc" }],
+    });
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  async getTimezones(countryCode: string) {
+    const country = await this.prisma.geoCountry.findUnique({
+      where: {
+        code: countryCode.trim().toUpperCase(),
+      },
       select: {
         id: true,
-        name: true,
-        subdivisionId: true,
       },
-      take: 500,
+    });
+
+    if (!country) {
+      throw new NotFoundException("Country not found");
+    }
+
+    const items = await this.prisma.geoTimezone.findMany({
+      where: {
+        countryId: country.id,
+      },
+      orderBy: [{ name: "asc" }],
     });
 
     return {

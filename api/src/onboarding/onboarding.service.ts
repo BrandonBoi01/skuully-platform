@@ -6,7 +6,6 @@ import {
 import {
   GenderAdmissionPolicy,
   InstitutionType,
-  LearningMode,
   OnboardingRoute,
   VerificationPurpose,
 } from "@prisma/client";
@@ -154,7 +153,11 @@ export class OnboardingService {
                 category: "national",
                 recommended: true,
               },
-              { label: "8-4-4", code: "KE_844", category: "legacy" },
+              {
+                label: "8-4-4",
+                code: "KE_844",
+                category: "legacy",
+              },
             ]
           : []),
         {
@@ -177,7 +180,11 @@ export class OnboardingService {
           code: "BRITISH",
           category: "international",
         },
-        { label: "CBSE", code: "CBSE", category: "international" },
+        {
+          label: "CBSE",
+          code: "CBSE",
+          category: "international",
+        },
         {
           label: "Montessori",
           code: "MONTESSORI",
