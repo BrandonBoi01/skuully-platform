@@ -63,15 +63,13 @@ model BranchMember {
 model User {
   id           String  @id @default(cuid())
   fullName     String
+  firstName    String?
+  lastName     String?
   email        String  @unique
   phone        String? @unique
   passwordHash String
   skuullyId    String  @unique
   avatarUrl    String?
-  firstName    String?
-  lastName     String?
-  googleId     String? @unique
-  appleId      String? @unique
 
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
@@ -83,7 +81,6 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  authProviders          AuthProviderAccount[]
   attendanceMarks        AttendanceMark[]
   attendanceSessions     AttendanceSession[]
   authAuditLogs          AuthAuditLog[]
@@ -104,10 +101,13 @@ model User {
   staffProfiles          Staff[]                 @relation("StaffUser")
   staffSessionMarks      StaffSessionMark[]      @relation("StaffSessionMarkedBy")
   visitorLogsCreated     VisitorLog[]            @relation("VisitorLogCreatedBy")
+  authProviderAccounts   AuthProviderAccount[]
 
   @@index([emailVerifiedAt])
   @@index([phoneVerifiedAt])
   @@index([onboardingCompletedAt])
+  @@index([firstName])
+  @@index([lastName])
 }
 
 model AuthProviderAccount {

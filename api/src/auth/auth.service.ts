@@ -31,7 +31,7 @@ export class AuthService {
     private readonly sessionTokens: SessionTokenService
   ) {}
 
-    async register(dto: RegisterDto, req?: any) {
+  async register(dto: RegisterDto, req?: any) {
     const email = dto.email.trim().toLowerCase();
     const fullName = this.normalizeFullName(dto.fullName);
     const { firstName, lastName } = this.splitName(fullName);
@@ -54,7 +54,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
-        const user = await this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         fullName,
         firstName,
@@ -64,7 +64,7 @@ export class AuthService {
         preferredLoginMethod: "EMAIL",
         skuullyId: await this.generateUniqueSkuullyId(this.prisma, fullName),
       },
-        select: {
+      select: {
         id: true,
         fullName: true,
         firstName: true,
@@ -136,7 +136,7 @@ export class AuthService {
           { phone: loweredIdentifier },
         ],
       },
-            select: {
+      select: {
         id: true,
         fullName: true,
         firstName: true,
@@ -740,7 +740,7 @@ export class AuthService {
     return digits || null;
   }
 
-    private normalizeFullName(value: string) {
+  private normalizeFullName(value: string) {
     const fullName = value.replace(/\s+/g, " ").trim();
 
     if (fullName.length < 2) {
@@ -753,12 +753,11 @@ export class AuthService {
   private splitName(fullName: string) {
     const parts = fullName.split(" ").filter(Boolean);
     const firstName = parts[0] ?? fullName;
-    const lastName =
-      parts.length > 1 ? parts.slice(1).join(" ") : null;
+    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
 
     return { firstName, lastName };
   }
-  
+
   private async generateUniqueSkuullyId(
     tx: Prisma.TransactionClient | PrismaService,
     fullName: string
