@@ -32,8 +32,10 @@ export class CsrfGuard implements CanActivate {
   private readCookie(cookieHeader?: string) {
     if (!cookieHeader) return null;
 
-    const parts = cookieHeader.split(";").map((item) => item.trim());
-    const found = parts.find((item) => item.startsWith(`${CSRF_COOKIE_NAME}=`));
+    const parts = cookieHeader.split(";").map((item: string) => item.trim());
+    const found = parts.find((item: string) =>
+      item.startsWith(`${CSRF_COOKIE_NAME}=`)
+    );
 
     if (!found) return null;
     return decodeURIComponent(found.slice(CSRF_COOKIE_NAME.length + 1));

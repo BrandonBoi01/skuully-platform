@@ -35,13 +35,13 @@ export class RolesGuard implements CanActivate {
 
     if (!user.role) {
       throw new ForbiddenException(
-        "Missing school role. Switch to a school first."
+        "Missing school membership type. Switch to a school first."
       );
     }
 
     if (!requiredRoles.includes(user.role)) {
       throw new ForbiddenException(
-        `Access denied. Requires role: ${requiredRoles.join(" or ")}`
+        `Access denied. Requires membership type: ${requiredRoles.join(" or ")}`
       );
     }
 
