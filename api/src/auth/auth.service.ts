@@ -241,7 +241,7 @@ export class AuthService {
       },
       select: {
         id: true,
-        role: true,
+        membershipType: true,
         schoolId: true,
       },
     });
@@ -250,7 +250,7 @@ export class AuthService {
       userId: user.id,
       schoolId: latestMembership?.schoolId ?? null,
       programId: null,
-      role: latestMembership?.role ?? null,
+      role: latestMembership?.membershipType ?? null,
       membershipId: latestMembership?.id ?? null,
       ipAddress,
       userAgent,
@@ -781,8 +781,9 @@ export class AuthService {
           orderBy: { createdAt: "desc" },
           select: {
             id: true,
-            role: true,
+            membershipType: true,
             status: true,
+            isPrimary: true,
             createdAt: true,
             school: {
               select: {
@@ -901,7 +902,8 @@ export class AuthService {
         user = {
           ...existingByEmail,
           emailVerifiedAt:
-            existingByEmail.emailVerifiedAt ?? (input.emailVerified ? new Date() : null),
+            existingByEmail.emailVerifiedAt ??
+            (input.emailVerified ? new Date() : null),
         };
       } else {
         const { firstName, lastName } = this.splitName(
@@ -960,7 +962,7 @@ export class AuthService {
       },
       select: {
         id: true,
-        role: true,
+        membershipType: true,
         schoolId: true,
       },
     });
@@ -969,7 +971,7 @@ export class AuthService {
       userId: user.id,
       schoolId: latestMembership?.schoolId ?? null,
       programId: null,
-      role: latestMembership?.role ?? null,
+      role: latestMembership?.membershipType ?? null,
       membershipId: latestMembership?.id ?? null,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,

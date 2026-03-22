@@ -1,4 +1,3 @@
-// src/attendance/attendance.controller.ts
 import {
   Body,
   Controller,
@@ -9,7 +8,8 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { AttendancePersonType, SchoolRole } from "@prisma/client";
+import { AttendancePersonType, MembershipType } from "@prisma/client";
+
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProgramContextGuard } from "../auth/program-context.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -26,15 +26,16 @@ import { DashboardService } from "../dashboard/dashboard.service";
 @Controller("attendance")
 export class AttendanceController {
   constructor(
-  private readonly attendance: AttendanceService,
-  private readonly dashboard: DashboardService
+    private readonly attendance: AttendanceService,
+    private readonly dashboard: DashboardService
   ) {}
+
   // =========================================================
   // SESSIONS (Student rollcall)
   // =========================================================
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("sessions")
   createSession(@Req() req: any, @Body() dto: CreateAttendanceSessionDto) {
     return this.attendance.createSession(
@@ -46,7 +47,7 @@ export class AttendanceController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("sessions/:sessionId/mark")
   markStudents(
     @Req() req: any,
@@ -68,7 +69,7 @@ export class AttendanceController {
   // =========================================================
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("sessions/:sessionId/mark-staff")
   markStaff(
     @Req() req: any,
@@ -86,7 +87,7 @@ export class AttendanceController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("sessions/:sessionId/close")
   close(@Req() req: any, @Param("sessionId") sessionId: string) {
     return this.attendance.closeSession(
@@ -115,11 +116,11 @@ export class AttendanceController {
   }
 
   // =========================================================
-  // SMART EVENTS (Gate, bus, watch, geofence, etc.)
+  // SMART EVENTS
   // =========================================================
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("events")
   createEvent(@Req() req: any, @Body() dto: CreateAttendanceEventDto) {
     return this.attendance.createEvent(
@@ -131,7 +132,7 @@ export class AttendanceController {
   }
 
   // =========================================================
-  // DAILY PERSON VIEW (single truth)
+  // DAILY PERSON VIEW
   // =========================================================
 
   @Get("daily/person/:personType/:personId")
@@ -151,7 +152,7 @@ export class AttendanceController {
   }
 
   // =========================================================
-  // DAILY HISTORY (immutable audit log)
+  // DAILY HISTORY
   // =========================================================
 
   @Get("daily/person/:personType/:personId/history")
@@ -235,11 +236,11 @@ export class AttendanceController {
   }
 
   // =========================================================
-// CONTROL CENTER (delegates to DashboardService)
-// =========================================================
+  // CONTROL CENTER
+  // =========================================================
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("dashboard/control-center")
   controlCenter(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.controlCenter(
@@ -250,7 +251,7 @@ export class AttendanceController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("dashboard/control-center/live")
   controlCenterLive(@Req() req: any, @Query("date") date?: string) {
     return Promise.all([

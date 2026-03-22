@@ -2,9 +2,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import {
+  AccountIntent,
   GenderAdmissionPolicy,
   InstitutionType,
   OnboardingRoute,
@@ -21,6 +21,7 @@ import { SaveBuildAcademicDto } from "./dto/save-build-academic.dto";
 import { SaveBuildDetailsDto } from "./dto/save-build-details.dto";
 import { SendPhoneCodeDto } from "./dto/send-phone-code.dto";
 import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
+import { SavePersonalIdentityDto } from "./dto/save-personal-identity.dto";
 
 @Injectable()
 export class OnboardingService {
@@ -35,6 +36,7 @@ export class OnboardingService {
       where: { userId },
       select: {
         route: true,
+        accountIntent: true,
         currentStep: true,
         completedAt: true,
         institutionTypeDraft: true,
@@ -42,10 +44,8 @@ export class OnboardingService {
         countryDraft: true,
         countryCodeDraft: true,
         skuullyIdDraft: true,
-        joinRoleDraft: true,
-        joinSchoolIdDraft: true,
-        joinInviteCodeDraft: true,
-        exploreHeadlineDraft: true,
+        personalHeadlineDraft: true,
+        dateOfBirthDraft: true,
         academicLabelDraft: true,
         academicItemsDraft: true,
         academicSetLater: true,
@@ -63,19 +63,19 @@ export class OnboardingService {
 
     return {
       route: onboarding?.route ?? null,
+      accountIntent: onboarding?.accountIntent ?? null,
       currentStep: onboarding?.currentStep ?? null,
       completedAt: onboarding?.completedAt ?? null,
       draft: onboarding
         ? {
+            accountIntent: onboarding.accountIntent,
             institutionType: onboarding.institutionTypeDraft,
             institutionName: onboarding.institutionNameDraft,
             country: onboarding.countryDraft,
             countryCode: onboarding.countryCodeDraft,
             skuullyId: onboarding.skuullyIdDraft,
-            joinRole: onboarding.joinRoleDraft,
-            joinSchoolId: onboarding.joinSchoolIdDraft,
-            joinInviteCode: onboarding.joinInviteCodeDraft,
-            exploreHeadline: onboarding.exploreHeadlineDraft,
+            personalHeadline: onboarding.personalHeadlineDraft,
+            dateOfBirth: onboarding.dateOfBirthDraft,
             academicLabel: onboarding.academicLabelDraft,
             academicItems: onboarding.academicItemsDraft ?? [],
             academicSetLater: onboarding.academicSetLater,
@@ -96,16 +96,69 @@ export class OnboardingService {
   async setRoute(userId: string, dto: SetOnboardingRouteDto) {
     await this.ensureUserExists(userId);
 
+    const isBuild = dto.route === OnboardingRoute.BUILD_INSTITUTION;
+    const isPersonal = dto.route === OnboardingRoute.PERSONAL_ACCOUNT;
+
     const onboarding = await this.prisma.userOnboarding.upsert({
       where: { userId },
       create: {
         userId,
         route: dto.route,
         currentStep: "route",
+
+        ...(isBuild
+          ? {
+              accountIntent: null,
+              skuullyIdDraft: null,
+              personalHeadlineDraft: null,
+              dateOfBirthDraft: null,
+            }
+          : {}),
+
+        ...(isPersonal
+          ? {
+              institutionTypeDraft: null,
+              institutionNameDraft: null,
+              countryDraft: null,
+              countryCodeDraft: null,
+              academicLabelDraft: null,
+              academicItemsDraft: [],
+              academicSetLater: false,
+              learningModesDraft: [],
+              genderAdmissionPolicyDraft: null,
+              ownershipDraft: null,
+              levelTypeDraft: null,
+            }
+          : {}),
       },
       update: {
         route: dto.route,
         currentStep: "route",
+
+        ...(isBuild
+          ? {
+              accountIntent: null,
+              skuullyIdDraft: null,
+              personalHeadlineDraft: null,
+              dateOfBirthDraft: null,
+            }
+          : {}),
+
+        ...(isPersonal
+          ? {
+              institutionTypeDraft: null,
+              institutionNameDraft: null,
+              countryDraft: null,
+              countryCodeDraft: null,
+              academicLabelDraft: null,
+              academicItemsDraft: [],
+              academicSetLater: false,
+              learningModesDraft: [],
+              genderAdmissionPolicyDraft: null,
+              ownershipDraft: null,
+              levelTypeDraft: null,
+            }
+          : {}),
       },
       select: {
         route: true,
@@ -381,6 +434,8 @@ export class OnboardingService {
   }
 
   async completeBuildInstitution(userId: string) {
+    await this.ensureVerifiedUser(userId);
+
     const onboarding = await this.prisma.userOnboarding.findUnique({
       where: { userId },
       select: {
@@ -454,260 +509,28 @@ export class OnboardingService {
     } as any);
   }
 
-  /* ---------------- JOIN INSTITUTION ---------------- */
+  /* ---------------- PERSONAL ACCOUNT ---------------- */
 
-  async searchJoinInstitutions(input: {
-    query: string;
-    mode: "name" | "skuully_id";
-    role: string;
-  }) {
-    const query = input.query.trim();
-    const mode = input.mode;
-
-    if (!query) {
-      return { items: [] };
-    }
-
-    const schools = await this.prisma.school.findMany({
-      where:
-        mode === "skuully_id"
-          ? {
-              name: {
-                contains: query.replace(/^@/, ""),
-                mode: "insensitive",
-              },
-            }
-          : {
-              name: {
-                contains: query,
-                mode: "insensitive",
-              },
-            },
-      select: {
-        id: true,
-        name: true,
-        country: true,
-        countryCode: true,
-        institutionType: true,
-      },
-      take: 20,
-      orderBy: {
-        name: "asc",
-      },
-    });
-
-    return {
-      items: schools.map((school) => ({
-        id: school.id,
-        name: school.name,
-        country: school.country,
-        countryCode: school.countryCode,
-        institutionType: school.institutionType,
-        skuullyId: null,
-      })),
-    };
-  }
-
-  async submitJoinInviteCode(userId: string, input: { code: string; role: string }) {
+  async savePersonalIdentity(userId: string, dto: SavePersonalIdentityDto) {
     await this.ensureVerifiedUser(userId);
 
-    const code = input.code.trim();
-
-    if (!code) {
-      throw new BadRequestException("Invite code is required");
-    }
-
-    const invite = await this.prisma.schoolInvite.findUnique({
-      where: { code },
-      include: {
-        school: {
-          select: {
-            id: true,
-            name: true,
-            country: true,
-          },
-        },
-      },
-    });
-
-    if (!invite) {
-      throw new NotFoundException("Invite code not found");
-    }
-
-    if (invite.status !== "PENDING") {
-      throw new BadRequestException("Invite is no longer active");
-    }
-
-    if (invite.expiresAt < new Date()) {
-      throw new BadRequestException("Invite code has expired");
-    }
-
-    await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.JOIN_INSTITUTION,
-        currentStep: "invite_code",
-        joinRoleDraft: input.role?.trim() || "INVITE",
-        joinInviteCodeDraft: code,
-        joinSchoolIdDraft: invite.schoolId,
-      },
-      update: {
-        route: OnboardingRoute.JOIN_INSTITUTION,
-        currentStep: "invite_code",
-        joinRoleDraft: input.role?.trim() || "INVITE",
-        joinInviteCodeDraft: code,
-        joinSchoolIdDraft: invite.schoolId,
-      },
-    });
-
-    return {
-      message: "Invite code accepted",
-      institution: {
-        id: invite.school.id,
-        name: invite.school.name,
-        country: invite.school.country,
-      },
-    };
-  }
-
-  async selectJoinInstitution(userId: string, input: { schoolId: string; role: string }) {
-    await this.ensureVerifiedUser(userId);
-
-    const school = await this.prisma.school.findUnique({
-      where: { id: input.schoolId },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!school) {
-      throw new NotFoundException("Institution not found");
-    }
-
-    await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.JOIN_INSTITUTION,
-        currentStep: "institution_selected",
-        joinRoleDraft: input.role.trim(),
-        joinSchoolIdDraft: input.schoolId,
-      },
-      update: {
-        route: OnboardingRoute.JOIN_INSTITUTION,
-        currentStep: "institution_selected",
-        joinRoleDraft: input.role.trim(),
-        joinSchoolIdDraft: input.schoolId,
-      },
-    });
-
-    return {
-      message: "Institution selected",
-    };
-  }
-
-  async completeJoinInstitution(userId: string) {
-    await this.ensureVerifiedUser(userId);
-
-    const onboarding = await this.prisma.userOnboarding.findUnique({
-      where: { userId },
-      select: {
-        joinRoleDraft: true,
-        joinSchoolIdDraft: true,
-        joinInviteCodeDraft: true,
-        phoneSetLater: true,
-        phoneE164Draft: true,
-      },
-    });
-
-    if (!onboarding) {
-      throw new BadRequestException("No onboarding draft found");
-    }
-
-    const role = String(onboarding.joinRoleDraft || "").toUpperCase();
-    const schoolId = onboarding.joinSchoolIdDraft;
-
-    if (!schoolId) {
-      throw new BadRequestException("No institution selected");
-    }
-
-    const existingMembership = await this.prisma.schoolMembership.findFirst({
-      where: {
-        userId,
-        schoolId,
-      },
-      select: {
-        id: true,
-        role: true,
-        status: true,
-      },
-    });
-
-    if (existingMembership?.status === "ACTIVE") {
-      return {
-        message: "You are already part of this institution",
-        active: existingMembership,
-      };
-    }
-
-    let mappedRole: any = "TEACHER";
-
-    if (role === "STAFF") mappedRole = "ADMIN";
-    if (role === "TEACHER") mappedRole = "TEACHER";
-
-    const membership = existingMembership
-      ? await this.prisma.schoolMembership.update({
-          where: { id: existingMembership.id },
-          data: {
-            role: mappedRole,
-            status: "ACTIVE",
-          },
-        })
-      : await this.prisma.schoolMembership.create({
-          data: {
-            schoolId,
-            userId,
-            role: mappedRole,
-            status: "ACTIVE",
-          },
-        });
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        onboardingCompletedAt: new Date(),
-      },
-    });
-
-    await this.prisma.userOnboarding.update({
-      where: { userId },
-      data: {
-        route: OnboardingRoute.JOIN_INSTITUTION,
-        currentStep: "completed",
-        completedAt: new Date(),
-      },
-    });
-
-    return {
-      message: "Join request completed",
-      active: {
-        schoolId,
-        membershipId: membership.id,
-        role: membership.role,
-      },
-    };
-  }
-
-  /* ---------------- EXPLORE SKUULLY ---------------- */
-
-  async saveExploreIdentity(userId: string, input: { skuullyId: string }) {
-    await this.ensureVerifiedUser(userId);
-
-    const skuullyId = input.skuullyId.trim().toLowerCase().replace(/^@/, "");
+    const skuullyId = this.normalizeSkuullyId(dto.skuullyId);
+    const fullName = dto.fullName.trim();
+    const headline = dto.headline?.trim() || null;
+    const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
+    const accountIntent = dto.accountIntent as AccountIntent;
+    const { firstName, lastName } = this.splitName(fullName);
 
     if (skuullyId.length < 3) {
       throw new BadRequestException("Skuully ID must be at least 3 characters");
+    }
+
+    if (fullName.length < 2) {
+      throw new BadRequestException("Full name is required");
+    }
+
+    if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) {
+      throw new BadRequestException("Date of birth is invalid");
     }
 
     const existing = await this.prisma.user.findFirst({
@@ -722,75 +545,57 @@ export class OnboardingService {
       throw new BadRequestException("Skuully ID is already taken");
     }
 
-    await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.EXPLORE_SKUULLY,
-        currentStep: "skuully_id",
-        skuullyIdDraft: skuullyId,
-      },
-      update: {
-        route: OnboardingRoute.EXPLORE_SKUULLY,
-        currentStep: "skuully_id",
-        skuullyIdDraft: skuullyId,
-      },
-    });
+    const isMinor = dateOfBirth ? this.computeIsMinor(dateOfBirth) : false;
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          fullName,
+          firstName,
+          lastName,
+          headline,
+          dateOfBirth,
+          isMinor,
+        },
+      }),
+      this.prisma.userOnboarding.upsert({
+        where: { userId },
+        create: {
+          userId,
+          route: OnboardingRoute.PERSONAL_ACCOUNT,
+          currentStep: "identity",
+          accountIntent,
+          skuullyIdDraft: skuullyId,
+          personalHeadlineDraft: headline,
+          dateOfBirthDraft: dateOfBirth,
+        },
+        update: {
+          route: OnboardingRoute.PERSONAL_ACCOUNT,
+          currentStep: "identity",
+          accountIntent,
+          skuullyIdDraft: skuullyId,
+          personalHeadlineDraft: headline,
+          dateOfBirthDraft: dateOfBirth,
+        },
+      }),
+    ]);
 
     return {
-      message: "Explore identity saved",
+      message: "Personal identity saved",
     };
   }
 
-  async saveExploreProfile(
-    userId: string,
-    input: { fullName: string; headline?: string }
-  ) {
-    await this.ensureVerifiedUser(userId);
-
-    const fullName = input.fullName.trim();
-    const headline = input.headline?.trim() || null;
-
-    if (fullName.length < 2) {
-      throw new BadRequestException("Full name is required");
-    }
-
-    await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.EXPLORE_SKUULLY,
-        currentStep: "profile",
-        exploreHeadlineDraft: headline,
-      },
-      update: {
-        route: OnboardingRoute.EXPLORE_SKUULLY,
-        currentStep: "profile",
-        exploreHeadlineDraft: headline,
-      },
-    });
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        fullName,
-        headline,
-      },
-    });
-
-    return {
-      message: "Explore profile saved",
-    };
-  }
-
-  async completeExploreSkuully(userId: string) {
+  async completePersonalAccount(userId: string) {
     await this.ensureVerifiedUser(userId);
 
     const onboarding = await this.prisma.userOnboarding.findUnique({
       where: { userId },
       select: {
         skuullyIdDraft: true,
-        exploreHeadlineDraft: true,
+        personalHeadlineDraft: true,
+        dateOfBirthDraft: true,
+        accountIntent: true,
       },
     });
 
@@ -810,19 +615,25 @@ export class OnboardingService {
       throw new BadRequestException("Skuully ID is already taken");
     }
 
+    const isMinor = onboarding.dateOfBirthDraft
+      ? this.computeIsMinor(onboarding.dateOfBirthDraft)
+      : false;
+
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: userId },
         data: {
           skuullyId: onboarding.skuullyIdDraft,
-          headline: onboarding.exploreHeadlineDraft ?? undefined,
+          headline: onboarding.personalHeadlineDraft ?? undefined,
+          dateOfBirth: onboarding.dateOfBirthDraft ?? undefined,
+          isMinor,
           onboardingCompletedAt: new Date(),
         },
       }),
       this.prisma.userOnboarding.update({
         where: { userId },
         data: {
-          route: OnboardingRoute.EXPLORE_SKUULLY,
+          route: OnboardingRoute.PERSONAL_ACCOUNT,
           currentStep: "completed",
           completedAt: new Date(),
         },
@@ -830,11 +641,11 @@ export class OnboardingService {
     ]);
 
     return {
-      message: "Explore setup completed",
+      message: "Personal account setup completed",
     };
   }
 
-  /* ---------------- SHARED PHONE STEP ---------------- */
+  /* ---------------- SHARED SECURITY ---------------- */
 
   async sendPhoneCode(userId: string, dto: SendPhoneCodeDto) {
     await this.ensureVerifiedUser(userId);
@@ -847,12 +658,10 @@ export class OnboardingService {
 
     const onboarding = await this.prisma.userOnboarding.findUnique({
       where: { userId },
-      select: {
-        route: true,
-      },
+      select: { route: true },
     });
 
-    const activeRoute = onboarding?.route ?? OnboardingRoute.BUILD_INSTITUTION;
+    const activeRoute = onboarding?.route ?? OnboardingRoute.PERSONAL_ACCOUNT;
     const code = String(randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -976,12 +785,10 @@ export class OnboardingService {
 
     const onboarding = await this.prisma.userOnboarding.findUnique({
       where: { userId },
-      select: {
-        route: true,
-      },
+      select: { route: true },
     });
 
-    const activeRoute = onboarding?.route ?? OnboardingRoute.BUILD_INSTITUTION;
+    const activeRoute = onboarding?.route ?? OnboardingRoute.PERSONAL_ACCOUNT;
 
     await this.prisma.userOnboarding.upsert({
       where: { userId },
@@ -1004,6 +811,41 @@ export class OnboardingService {
   }
 
   /* ---------------- HELPERS ---------------- */
+
+  private normalizeSkuullyId(value: string) {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[^a-z0-9._]/g, "")
+      .replace(/\.\.+/g, ".")
+      .replace(/__+/g, "_")
+      .replace(/^\.|\.$/g, "")
+      .slice(0, 24);
+  }
+
+  private splitName(fullName: string) {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] ?? null;
+    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+
+    return { firstName, lastName };
+  }
+
+  private computeIsMinor(dateOfBirth: Date) {
+    const today = new Date();
+    let age = today.getFullYear() - dateOfBirth.getFullYear();
+    const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())
+    ) {
+      age -= 1;
+    }
+
+    return age < 18;
+  }
 
   private async ensureUserExists(userId: string) {
     const user = await this.prisma.user.findUnique({

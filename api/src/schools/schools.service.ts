@@ -10,9 +10,10 @@ import {
   GenderAdmissionPolicy,
   InstitutionType,
   LearningMode,
+  MembershipType,
+  OnboardingRoute,
   OrgRole,
   Prisma,
-  SchoolRole,
 } from "@prisma/client";
 import { randomBytes } from "crypto";
 import * as bcrypt from "bcryptjs";
@@ -43,13 +44,15 @@ export class SchoolsService {
 
     return memberships.map((membership) => ({
       school: membership.school,
-      role: membership.role,
+      membershipType: membership.membershipType,
       status: membership.status,
       joinedAt: membership.createdAt,
     }));
   }
 
-  private normalizeLearningModes(input?: LearningMode[] | string[] | null): LearningMode[] {
+  private normalizeLearningModes(
+    input?: LearningMode[] | string[] | null
+  ): LearningMode[] {
     if (!input?.length) return [];
 
     const valid = new Set<LearningMode>(Object.values(LearningMode));
@@ -73,7 +76,10 @@ export class SchoolsService {
   ): GenderAdmissionPolicy | null {
     if (!input) return null;
 
-    const normalized = String(input).trim().toUpperCase().replace(/[\s-]+/g, "_");
+    const normalized = String(input)
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
 
     if (normalized === "BOYS_ONLY") return GenderAdmissionPolicy.BOYS_ONLY;
     if (normalized === "GIRLS_ONLY") return GenderAdmissionPolicy.GIRLS_ONLY;
@@ -218,12 +224,13 @@ export class SchoolsService {
           data: {
             schoolId: school.id,
             userId,
-            role: SchoolRole.OWNER,
+            membershipType: MembershipType.OWNER,
             status: "ACTIVE",
+            isPrimary: true,
           },
           select: {
             id: true,
-            role: true,
+            membershipType: true,
             status: true,
           },
         });
@@ -252,7 +259,7 @@ export class SchoolsService {
           where: { userId },
           create: {
             userId,
-            route: "BUILD_INSTITUTION",
+            route: OnboardingRoute.BUILD_INSTITUTION,
             institutionTypeDraft: institutionType,
             institutionNameDraft: name,
             countryDraft: country,
@@ -282,7 +289,7 @@ export class SchoolsService {
             completedAt: now,
           },
           update: {
-            route: "BUILD_INSTITUTION",
+            route: OnboardingRoute.BUILD_INSTITUTION,
             institutionTypeDraft: institutionType,
             institutionNameDraft: name,
             countryDraft: country,
@@ -331,7 +338,7 @@ export class SchoolsService {
     const token = await this.jwt.signAsync({
       sub: userId,
       schoolId: result.school.id,
-      role: result.membership.role,
+      role: result.membership.membershipType,
       membershipId: result.membership.id,
     });
 
@@ -341,12 +348,12 @@ export class SchoolsService {
       school: result.school,
       membership: {
         id: result.membership.id,
-        role: result.membership.role,
+        membershipType: result.membership.membershipType,
         status: result.membership.status,
       },
       active: {
         school: result.school,
-        role: result.membership.role,
+        membershipType: result.membership.membershipType,
         membershipId: result.membership.id,
       },
     };
@@ -375,7 +382,7 @@ export class SchoolsService {
     const token = await this.jwt.signAsync({
       sub: userId,
       schoolId: membership.schoolId,
-      role: membership.role,
+      role: membership.membershipType,
       membershipId: membership.id,
     });
 
@@ -383,7 +390,7 @@ export class SchoolsService {
       token,
       active: {
         school: membership.school,
-        role: membership.role,
+        membershipType: membership.membershipType,
         membershipId: membership.id,
       },
     };
@@ -421,16 +428,16 @@ export class SchoolsService {
 
   async inviteStaff(
     schoolId: string,
-    inviterRole: SchoolRole,
+    inviterMembershipType: MembershipType,
     email: string,
-    role: SchoolRole
+    membershipType: MembershipType
   ) {
-    const allowedInviterRoles = new Set<SchoolRole>([
-      SchoolRole.OWNER,
-      SchoolRole.ADMIN,
+    const allowedInviterTypes = new Set<MembershipType>([
+      MembershipType.OWNER,
+      MembershipType.ADMIN,
     ]);
 
-    if (!allowedInviterRoles.has(inviterRole)) {
+    if (!allowedInviterTypes.has(inviterMembershipType)) {
       throw new ForbiddenException("Only OWNER/ADMIN can invite staff");
     }
 
@@ -440,7 +447,10 @@ export class SchoolsService {
       throw new ConflictException("Email is required");
     }
 
-    if (role === SchoolRole.OWNER && inviterRole !== SchoolRole.OWNER) {
+    if (
+      membershipType === MembershipType.OWNER &&
+      inviterMembershipType !== MembershipType.OWNER
+    ) {
       throw new ForbiddenException("Only OWNER can invite another OWNER");
     }
 
@@ -455,7 +465,7 @@ export class SchoolsService {
         },
         select: {
           id: true,
-          role: true,
+          membershipType: true,
         },
       });
 
@@ -475,7 +485,7 @@ export class SchoolsService {
       select: {
         id: true,
         email: true,
-        role: true,
+        membershipType: true,
         code: true,
         status: true,
         expiresAt: true,
@@ -497,7 +507,7 @@ export class SchoolsService {
       data: {
         schoolId,
         email: normalizedEmail,
-        role,
+        membershipType,
         code,
         status: "PENDING",
         expiresAt,
@@ -506,7 +516,7 @@ export class SchoolsService {
         id: true,
         schoolId: true,
         email: true,
-        role: true,
+        membershipType: true,
         code: true,
         status: true,
         expiresAt: true,
@@ -600,11 +610,13 @@ export class SchoolsService {
           const updatedMembership = await tx.schoolMembership.update({
             where: { id: existingMembership.id },
             data: {
-              role: invite.role,
+              membershipType: invite.membershipType,
               status: "ACTIVE",
             },
             select: {
               id: true,
+              membershipType: true,
+              status: true,
             },
           });
 
@@ -614,11 +626,13 @@ export class SchoolsService {
             data: {
               userId: user.id,
               schoolId: invite.schoolId,
-              role: invite.role,
+              membershipType: invite.membershipType,
               status: "ACTIVE",
             },
             select: {
               id: true,
+              membershipType: true,
+              status: true,
             },
           });
 
@@ -634,12 +648,12 @@ export class SchoolsService {
           where: { userId: user.id },
           create: {
             userId: user.id,
-            route: "JOIN_INSTITUTION",
+            route: OnboardingRoute.PERSONAL_ACCOUNT,
             currentStep: "completed",
             completedAt: new Date(),
           },
           update: {
-            route: "JOIN_INSTITUTION",
+            route: OnboardingRoute.PERSONAL_ACCOUNT,
             currentStep: "completed",
             completedAt: new Date(),
           },
@@ -658,7 +672,7 @@ export class SchoolsService {
     const token = await this.jwt.signAsync({
       sub: createdOrFoundUser.user.id,
       schoolId: invite.schoolId,
-      role: invite.role,
+      role: invite.membershipType,
       membershipId: createdOrFoundUser.membershipId,
     });
 
@@ -671,7 +685,7 @@ export class SchoolsService {
         email: createdOrFoundUser.user.email,
       },
       school: invite.school,
-      role: invite.role,
+      membershipType: invite.membershipType,
       membershipId: createdOrFoundUser.membershipId,
     };
   }
@@ -689,7 +703,7 @@ export class SchoolsService {
       select: {
         id: true,
         email: true,
-        role: true,
+        membershipType: true,
         code: true,
         status: true,
         expiresAt: true,

@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, Req, UseGuards } from "@nestjs/common";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProgramContextGuard } from "../auth/program-context.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -13,14 +13,14 @@ export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("admin/overview")
   adminOverview(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.adminOverview(req.user.schoolId, date);
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Get("teacher/overview")
   teacherOverview(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.teacherOverview(
@@ -32,7 +32,7 @@ export class DashboardController {
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("control-center")
   controlCenter(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.controlCenter(
@@ -43,7 +43,7 @@ export class DashboardController {
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("control-center/classes-pending")
   classesPending(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.classesPendingToday(
@@ -54,7 +54,7 @@ export class DashboardController {
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("control-center/campus-status")
   campusStatus(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.campusStatus(
@@ -65,7 +65,7 @@ export class DashboardController {
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("control-center/heat-map")
   heatMap(@Req() req: any, @Query("date") date?: string) {
     return this.dashboard.controlCenterHeatMap(
@@ -76,7 +76,7 @@ export class DashboardController {
   }
 
   @UseGuards(ProgramContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("control-center/class/:classId")
   classDrilldown(
     @Req() req: any,

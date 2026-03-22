@@ -70,7 +70,13 @@ model User {
   passwordHash String?
   skuullyId    String  @unique
   avatarUrl    String?
-  headline     String?
+
+  headline          String?
+  dateOfBirth       DateTime?
+  isMinor           Boolean           @default(false)
+  profileVisibility ProfileVisibility @default(PRIVATE)
+  accountStatus     AccountStatus     @default(ACTIVE)
+  trustLevel        TrustLevel        @default(LOW)
 
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
@@ -104,11 +110,21 @@ model User {
   visitorLogsCreated     VisitorLog[]            @relation("VisitorLogCreatedBy")
   authProviderAccounts   AuthProviderAccount[]
 
+  guardianLinksGiven    StudentGuardian[]   @relation("GuardianUser")
+  guardianLinksApproved StudentGuardian[]   @relation("GuardianApprovedBy")
+  joinRequestsCreated   SchoolJoinRequest[] @relation("JoinRequestUser")
+  joinRequestsReviewed  SchoolJoinRequest[] @relation("JoinRequestReviewedBy")
+  students              Student[]
+  schoolInvites         SchoolInvite[]
+
   @@index([emailVerifiedAt])
   @@index([phoneVerifiedAt])
   @@index([onboardingCompletedAt])
   @@index([firstName])
   @@index([lastName])
+  @@index([dateOfBirth])
+  @@index([isMinor])
+  @@index([accountStatus])
 }
 
 model AuthProviderAccount {
@@ -180,17 +196,15 @@ model UserOnboarding {
   userId String @unique
 
   route                OnboardingRoute?
-  institutionIntent    InstitutionIntent?
+  accountIntent        AccountIntent?
   institutionTypeDraft InstitutionType?
   institutionNameDraft String?
   countryDraft         String?
   countryCodeDraft     String?
   skuullyIdDraft       String?
 
-  joinRoleDraft        String?
-  joinSchoolIdDraft    String?
-  joinInviteCodeDraft  String?
-  exploreHeadlineDraft String?
+  personalHeadlineDraft String?
+  dateOfBirthDraft      DateTime?
 
   academicLabelDraft String?
   academicItemsDraft String[]
@@ -215,8 +229,8 @@ model UserOnboarding {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([route])
+  @@index([accountIntent])
   @@index([institutionTypeDraft])
-  @@index([joinSchoolIdDraft])
 }
 
 model AuthAuditLog {
@@ -290,22 +304,25 @@ model School {
   branchId       String?
   organizationId String?
 
-  attendanceEvents   AttendanceEvent[]
-  attendanceSessions AttendanceSession[]
-  dailyAttendances   DailyAttendance[]
-  devices            Device[]
-  excuseRequests     ExcuseRequest[]
-  leaveOutPasses     LeaveOutPass[]
-  branch             Branch?                   @relation(fields: [branchId], references: [id])
-  organization       Organization?             @relation(fields: [organizationId], references: [id])
-  invites            SchoolInvite[]
-  members            SchoolMembership[]
-  programs           SchoolProgram[]
-  staff              Staff[]
-  students           Student[]
-  visitors           Visitor[]
-  visitorLogs        VisitorLog[]
-  academicFrameworks SchoolAcademicFramework[]
+  attendanceEvents      AttendanceEvent[]
+  attendanceSessions    AttendanceSession[]
+  dailyAttendances      DailyAttendance[]
+  devices               Device[]
+  excuseRequests        ExcuseRequest[]
+  leaveOutPasses        LeaveOutPass[]
+  branch                Branch?                   @relation(fields: [branchId], references: [id])
+  organization          Organization?             @relation(fields: [organizationId], references: [id])
+  invites               SchoolInvite[]
+  members               SchoolMembership[]
+  programs              SchoolProgram[]
+  staff                 Staff[]
+  students              Student[]
+  visitors              Visitor[]
+  visitorLogs           VisitorLog[]
+  academicFrameworks    SchoolAcademicFramework[]
+  schoolRoleDefinitions SchoolRoleDefinition[]
+  schoolJoinRequests    SchoolJoinRequest[]
+  studentGuardians      StudentGuardian[]
 
   @@index([organizationId])
   @@index([branchId])
@@ -315,36 +332,49 @@ model School {
 }
 
 model SchoolMembership {
-  id        String     @id @default(cuid())
-  schoolId  String
-  userId    String
-  role      SchoolRole
-  status    String     @default("ACTIVE")
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id             String           @id @default(cuid())
+  schoolId       String
+  userId         String
+  membershipType MembershipType
+  status         MembershipStatus @default(ACTIVE)
+  isPrimary      Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  assignedRoles SchoolMembershipAssignedRole[]
+  staffs        Staff[]
 
   @@unique([userId, schoolId], name: "unique_school_membership")
   @@index([schoolId])
   @@index([userId])
   @@index([status])
+  @@index([membershipType])
 }
 
 model SchoolInvite {
-  id        String     @id @default(cuid())
-  schoolId  String
-  email     String
-  role      SchoolRole
-  code      String     @unique
-  status    String     @default("PENDING")
-  createdAt DateTime   @default(now())
-  expiresAt DateTime
-  school    School     @relation(fields: [schoolId], references: [id])
+  id              String         @id @default(cuid())
+  schoolId        String
+  email           String
+  membershipType  MembershipType
+  roleId          String?
+  code            String         @unique
+  status          InviteStatus   @default(PENDING)
+  invitedByUserId String?
+  createdAt       DateTime       @default(now())
+  expiresAt       DateTime
+
+  school    School                @relation(fields: [schoolId], references: [id])
+  role      SchoolRoleDefinition? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  invitedBy User?                 @relation(fields: [invitedByUserId], references: [id], onDelete: SetNull)
 
   @@index([schoolId])
   @@index([email])
+  @@index([membershipType])
+  @@index([roleId])
+  @@index([invitedByUserId])
 }
 
 model SchoolAcademicFramework {
@@ -363,6 +393,80 @@ model SchoolAcademicFramework {
   @@unique([schoolId, label], name: "unique_school_framework_label")
   @@index([schoolId])
   @@index([schoolId, isPrimary])
+}
+
+model SchoolRoleDefinition {
+  id           String   @id @default(cuid())
+  schoolId     String
+  key          String
+  name         String
+  description  String?
+  isSystem     Boolean  @default(false)
+  isAssignable Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school        School                         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  permissions   SchoolRolePermission[]
+  assignees     SchoolMembershipAssignedRole[]
+  schoolInvites SchoolInvite[]
+
+  @@unique([schoolId, key], name: "unique_school_role_key")
+  @@unique([schoolId, name], name: "unique_school_role_name")
+  @@index([schoolId])
+}
+
+model SchoolRolePermission {
+  id         String   @id @default(cuid())
+  roleId     String
+  permission String
+  createdAt  DateTime @default(now())
+
+  role SchoolRoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission], name: "unique_role_permission")
+  @@index([roleId])
+}
+
+model SchoolMembershipAssignedRole {
+  id           String   @id @default(cuid())
+  membershipId String
+  roleId       String
+  createdAt    DateTime @default(now())
+
+  membership SchoolMembership     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       SchoolRoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId], name: "unique_membership_role")
+  @@index([membershipId])
+  @@index([roleId])
+}
+
+model SchoolJoinRequest {
+  id       String                  @id @default(cuid())
+  schoolId String
+  userId   String
+  type     SchoolJoinRequestType
+  status   SchoolJoinRequestStatus @default(PENDING)
+
+  studentFullName String?
+  admissionNo     String?
+  staffNo         String?
+  note            String?
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  school     School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user       User   @relation("JoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User?  @relation("JoinRequestReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([type])
+  @@index([status])
 }
 
 model CurriculumTemplate {
@@ -421,7 +525,7 @@ model SchoolProgram {
   schoolId           String
   templateId         String
   name               String
-  status             String              @default("ACTIVE")
+  status             ProgramStatus       @default(ACTIVE)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   attendanceSessions AttendanceSession[]
@@ -498,29 +602,64 @@ model ProgramGradeSubject {
 }
 
 model Student {
-  id              String              @id @default(cuid())
-  schoolId        String
-  programId       String
-  classId         String?
-  admissionNo     String?
-  fullName        String
-  gender          String?
-  dob             DateTime?
-  status          String              @default("ACTIVE")
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id          String    @id @default(cuid())
+  schoolId    String
+  programId   String
+  classId     String?
+  userId      String?
+  admissionNo String?
+  fullName    String
+  gender      String?
+  dob         DateTime?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
   attendanceMarks AttendanceMark[]
   excuseRequests  ExcuseRequest[]
   leaveOutPasses  LeaveOutPass[]
   class           ProgramClass?       @relation(fields: [classId], references: [id])
   program         SchoolProgram       @relation(fields: [programId], references: [id])
   school          School              @relation(fields: [schoolId], references: [id])
+  user            User?               @relation(fields: [userId], references: [id])
   fields          StudentFieldValue[]
+  guardians       StudentGuardian[]
 
   @@unique([schoolId, admissionNo], name: "schoolId_admissionNo")
   @@index([schoolId])
   @@index([programId])
   @@index([classId])
+  @@index([userId])
+}
+
+model StudentGuardian {
+  id                String             @id @default(cuid())
+  schoolId          String
+  studentId         String
+  guardianUserId    String?
+  fullName          String
+  phone             String?
+  email             String?
+  relationshipType  RelationshipType
+  status            RelationshipStatus @default(PENDING)
+  isPrimary         Boolean            @default(false)
+  canPickUp         Boolean            @default(false)
+  canReceiveUpdates Boolean            @default(true)
+  canPayFees        Boolean            @default(false)
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  school         School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student        Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianUser   User?   @relation("GuardianUser", fields: [guardianUserId], references: [id], onDelete: SetNull)
+  approvedByUser User?   @relation("GuardianApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([guardianUserId])
+  @@index([status])
 }
 
 model TemplateStudentField {
@@ -556,24 +695,27 @@ model StudentFieldValue {
 }
 
 model Staff {
-  id             String             @id @default(cuid())
+  id             String          @id @default(cuid())
   schoolId       String
   programId      String?
   userId         String?
+  membershipId   String?         @unique
   fullName       String
   phone          String?
   email          String?
   staffNo        String?
-  staffType      StaffType          @default(NON_TEACHING)
-  engagement     StaffEngagement    @default(FULL_TIME)
-  attendanceMode AttendanceMode     @default(DAILY)
-  status         String             @default("ACTIVE")
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  program        SchoolProgram?     @relation(fields: [programId], references: [id])
-  school         School             @relation(fields: [schoolId], references: [id])
-  user           User?              @relation("StaffUser", fields: [userId], references: [id])
-  sessionMarks   StaffSessionMark[]
+  staffType      StaffType       @default(NON_TEACHING)
+  engagement     StaffEngagement @default(FULL_TIME)
+  attendanceMode AttendanceMode  @default(DAILY)
+  status         StaffStatus     @default(ACTIVE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  program      SchoolProgram?     @relation(fields: [programId], references: [id])
+  school       School             @relation(fields: [schoolId], references: [id])
+  user         User?              @relation("StaffUser", fields: [userId], references: [id])
+  membership   SchoolMembership?  @relation(fields: [membershipId], references: [id])
+  sessionMarks StaffSessionMark[]
 
   @@unique([schoolId, staffNo], name: "unique_school_staffNo")
   @@index([schoolId])
@@ -679,7 +821,7 @@ model DailyAttendance {
   lastDeclaredAt           DateTime?
   lastDeclaredByUserId     String?
   lockedAt                 DateTime?
-  lockedByRole             SchoolRole?
+  lockedByRole             MembershipType?
   lockedByUserId           String?
   lockedSource             AttendanceSource?
   lastManualEditedAt       DateTime?
@@ -709,7 +851,7 @@ model DailyAttendanceChange {
   toStatus          AttendanceStatus
   changeType        DailyAttendanceChangeType @default(STATUS)
   changedByUserId   String?
-  changedByRole     SchoolRole?
+  changedByRole     MembershipType?
   source            AttendanceSource
   reason            String?
   createdAt         DateTime                  @default(now())
@@ -915,26 +1057,56 @@ enum AuthProvider {
   APPLE
 }
 
-enum SchoolRole {
-  OWNER
-  ADMIN
-  TEACHER
-  ACCOUNTANT
-  HR
+enum LoginMethod {
+  EMAIL
+  PHONE
+  SKUULLY_ID
+  GOOGLE
+  APPLE
 }
 
-enum GenderAdmissionPolicy {
-  BOYS_ONLY
-  GIRLS_ONLY
-  MIXED
+enum VerificationPurpose {
+  EMAIL_VERIFY
+  PHONE_VERIFY
+  LOGIN_2FA
+  PASSWORD_RESET
+  PHONE_CHANGE
 }
 
-enum LearningMode {
-  DAY
-  BOARDING
-  IN_PERSON
-  ONLINE
-  HYBRID
+enum OnboardingRoute {
+  BUILD_INSTITUTION
+  PERSONAL_ACCOUNT
+}
+
+enum AccountIntent {
+  FOUNDER
+  STAFF
+  PARENT
+  STUDENT
+  PROFESSIONAL
+  EXPLORER
+  UNSURE
+}
+
+enum ProfileVisibility {
+  PRIVATE
+  SCHOOL_ONLY
+  CONNECTIONS_ONLY
+  PUBLIC
+}
+
+enum AccountStatus {
+  ACTIVE
+  RESTRICTED
+  SUSPENDED
+  PENDING_REVIEW
+}
+
+enum TrustLevel {
+  LOW
+  NORMAL
+  VERIFIED
+  HIGH
 }
 
 enum InstitutionType {
@@ -959,6 +1131,99 @@ enum BranchRole {
   BRANCH_VIEWER
 }
 
+enum MembershipType {
+  OWNER
+  ADMIN
+  STAFF
+  STUDENT
+  PARENT
+  GUARDIAN
+  CAREGIVER
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  PENDING
+  SUSPENDED
+  REVOKED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+  CANCELLED
+}
+
+enum SchoolJoinRequestType {
+  STUDENT
+  PARENT
+  STAFF
+}
+
+enum SchoolJoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum RelationshipType {
+  PARENT
+  GUARDIAN
+  CAREGIVER
+  NEXT_OF_KIN
+  EMERGENCY_CONTACT
+}
+
+enum RelationshipStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  REVOKED
+}
+
+enum GenderAdmissionPolicy {
+  BOYS_ONLY
+  GIRLS_ONLY
+  MIXED
+}
+
+enum LearningMode {
+  DAY
+  BOARDING
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum StaffType {
+  TEACHING
+  NON_TEACHING
+}
+
+enum StaffEngagement {
+  FULL_TIME
+  PART_TIME
+  CONTRACTOR
+  VISITING
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum AttendanceMode {
+  DAILY
+  SESSION
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -969,6 +1234,12 @@ enum AttendanceStatus {
 enum AttendanceSessionStatus {
   OPEN
   CLOSED
+}
+
+enum AttendanceSessionType {
+  CLASS_ROLLCALL
+  LESSON
+  STAFF_SESSION
 }
 
 enum AttendancePersonType {
@@ -1009,36 +1280,6 @@ enum AttendanceSource {
   STUDENT_APP
 }
 
-enum ApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
-}
-
-enum StaffType {
-  TEACHING
-  NON_TEACHING
-}
-
-enum StaffEngagement {
-  FULL_TIME
-  PART_TIME
-  CONTRACTOR
-  VISITING
-}
-
-enum AttendanceMode {
-  DAILY
-  SESSION
-}
-
-enum AttendanceSessionType {
-  CLASS_ROLLCALL
-  LESSON
-  STAFF_SESSION
-}
-
 enum DailyAttendanceComputedFrom {
   MANUAL
   EVENTS
@@ -1053,33 +1294,15 @@ enum DailyAttendanceChangeType {
   SYSTEM
 }
 
-enum LoginMethod {
-  EMAIL
-  PHONE
-  SKUULLY_ID
-  GOOGLE
-  APPLE
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
-enum VerificationPurpose {
-  EMAIL_VERIFY
-  PHONE_VERIFY
-  LOGIN_2FA
-  PASSWORD_RESET
-  PHONE_CHANGE
-}
-
-enum OnboardingRoute {
-  BUILD_INSTITUTION
-  JOIN_INSTITUTION
-  EXPLORE_SKUULLY
-}
-
-enum InstitutionIntent {
-  FOUNDER
-  ADMIN
-  OWNER
-  EDUCATOR
-  LEARNER
-  EXPLORER
+enum ProgramStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
 }

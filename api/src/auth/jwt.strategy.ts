@@ -2,14 +2,14 @@ import { Injectable } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 import { ACCESS_COOKIE_NAME } from "./auth-cookie.util";
 
 interface JwtPayload {
   sub: string;
   schoolId?: string | null;
   programId?: string | null;
-  role?: SchoolRole | null;
+  role?: MembershipType | null;
   membershipId?: string | null;
   type?: string;
 }

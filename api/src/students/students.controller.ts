@@ -1,4 +1,3 @@
-// src/students/students.controller.ts
 import {
   Body,
   Controller,
@@ -9,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProgramContextGuard } from "../auth/program-context.guard";
 import { SchoolContextGuard } from "../auth/school-context.guard";
@@ -30,7 +29,7 @@ export class StudentsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post()
   createStudent(@Req() req: any, @Body() dto: CreateStudentDto) {
     return this.students.createStudent(
@@ -46,7 +45,7 @@ export class StudentsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Patch(":studentId/assign-class")
   assignClass(
     @Req() req: any,

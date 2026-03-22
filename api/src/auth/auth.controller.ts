@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { Throttle } from "@nestjs/throttler";
+
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { CsrfGuard } from "./csrf.guard";
@@ -22,10 +23,10 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { SocialAuthDto } from "./dto/social-auth.dto";
 import {
   clearAuthCookies,
+  REFRESH_COOKIE_NAME,
   setAccessCookie,
   setCsrfCookie,
   setRefreshCookie,
-  REFRESH_COOKIE_NAME,
 } from "./auth-cookie.util";
 
 @Controller("auth")
@@ -69,6 +70,7 @@ export class AuthController {
     return {
       requiresEmailVerification: result.requiresEmailVerification,
       emailVerified: result.emailVerified,
+      phoneVerified: result.phoneVerified,
       user: result.user,
     };
   }
@@ -168,6 +170,7 @@ export class AuthController {
   async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req);
     clearAuthCookies(res);
+
     return {
       message: "Logged out successfully",
     };
@@ -224,11 +227,14 @@ export class AuthController {
 
   private readRefreshCookie(cookieHeader?: string) {
     if (!cookieHeader) return null;
+
     const parts = cookieHeader.split(";").map((item: string) => item.trim());
     const found = parts.find((item: string) =>
       item.startsWith(`${REFRESH_COOKIE_NAME}=`)
     );
+
     if (!found) return null;
+
     return decodeURIComponent(found.slice(REFRESH_COOKIE_NAME.length + 1));
   }
 }

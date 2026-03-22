@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma, SchoolRole } from "@prisma/client";
+import { MembershipType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProgramDto } from "./dto/create-program.dto";
 
@@ -104,13 +104,18 @@ export class ProgramsService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === "P2002"
       ) {
-        throw new ConflictException("Program name already exists in this school");
+        throw new ConflictException(
+          "Program name already exists in this school"
+        );
       }
       throw e;
     }
   }
 
-  private async ensureGenericTemplateHasDefaults(templateId: string, templateCode: string) {
+  private async ensureGenericTemplateHasDefaults(
+    templateId: string,
+    templateCode: string
+  ) {
     if (templateCode !== "GENERIC") {
       return;
     }
@@ -185,7 +190,7 @@ export class ProgramsService {
               templateId,
               name: grade.name,
               order: grade.order,
-              stage: grade.stage as any,
+              stage: grade.stage,
             },
           });
 
@@ -402,15 +407,15 @@ export class ProgramsService {
   async switchProgram(
     userId: string,
     schoolId: string,
-    role: SchoolRole | string,
+    role: MembershipType | string,
     programId: string
   ) {
-    const normalizedRole = role as SchoolRole;
+    const normalizedRole = role as MembershipType;
 
-    const allowedRoles: SchoolRole[] = [
-      SchoolRole.OWNER,
-      SchoolRole.ADMIN,
-      SchoolRole.TEACHER,
+    const allowedRoles: MembershipType[] = [
+      MembershipType.OWNER,
+      MembershipType.ADMIN,
+      MembershipType.STAFF,
     ];
 
     if (!allowedRoles.includes(normalizedRole)) {
@@ -425,12 +430,14 @@ export class ProgramsService {
       },
       select: {
         id: true,
-        role: true,
+        membershipType: true,
       },
     });
 
     if (!membership) {
-      throw new ForbiddenException("You are not an active member of this school");
+      throw new ForbiddenException(
+        "You are not an active member of this school"
+      );
     }
 
     const program = await this.prisma.schoolProgram.findFirst({
@@ -450,8 +457,8 @@ export class ProgramsService {
       throw new ForbiddenException("Program not found in active school");
     }
 
-    if (normalizedRole === SchoolRole.TEACHER) {
-      const teacherProfile = await this.prisma.staff.findFirst({
+    if (normalizedRole === MembershipType.STAFF) {
+      const staffProfile = await this.prisma.staff.findFirst({
         where: {
           schoolId,
           userId,
@@ -464,7 +471,7 @@ export class ProgramsService {
         },
       });
 
-      const teacherCreatedSession = await this.prisma.attendanceSession.findFirst({
+      const createdSession = await this.prisma.attendanceSession.findFirst({
         where: {
           schoolId,
           programId: program.id,
@@ -473,10 +480,10 @@ export class ProgramsService {
         select: { id: true },
       });
 
-      const teacherMarkedStaffInProgram = teacherProfile
+      const markedStaffInProgram = staffProfile
         ? await this.prisma.staffSessionMark.findFirst({
             where: {
-              staffId: teacherProfile.id,
+              staffId: staffProfile.id,
               session: {
                 schoolId,
                 programId: program.id,
@@ -486,12 +493,12 @@ export class ProgramsService {
           })
         : null;
 
-      const hasTeacherAccess =
-        !!teacherProfile || !!teacherCreatedSession || !!teacherMarkedStaffInProgram;
+      const hasProgramAccess =
+        !!staffProfile || !!createdSession || !!markedStaffInProgram;
 
-      if (!hasTeacherAccess) {
+      if (!hasProgramAccess) {
         throw new ForbiddenException(
-          "Teachers can only switch to programs they are assigned to."
+          "You can only switch to programs you are assigned to."
         );
       }
     }
@@ -499,7 +506,8 @@ export class ProgramsService {
     const token = await this.jwt.signAsync({
       sub: userId,
       schoolId,
-      role: normalizedRole,
+      role: membership.membershipType,
+      membershipId: membership.id,
       programId: program.id,
     });
 
@@ -511,7 +519,8 @@ export class ProgramsService {
           name: program.name,
         },
         schoolId,
-        role: normalizedRole,
+        membershipType: membership.membershipType,
+        membershipId: membership.id,
       },
     };
   }
@@ -519,7 +528,7 @@ export class ProgramsService {
   async activeProgramContext(
     userId: string,
     schoolId?: string | null,
-    role?: SchoolRole | string | null,
+    role?: MembershipType | string | null,
     programId?: string | null
   ) {
     if (!schoolId || !programId) {
@@ -550,7 +559,7 @@ export class ProgramsService {
       active: {
         userId,
         schoolId,
-        role: role ?? null,
+        membershipType: role ?? null,
         program: {
           id: program.id,
           name: program.name,

@@ -1,7 +1,7 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from "class-validator";
+import { IsEmail, IsEnum, IsOptional, IsString } from "class-validator";
 import { MembershipType } from "@prisma/client";
 
-export class InviteStaffDto {
+export class CreateSchoolInviteDto {
   @IsEmail()
   email: string;
 
@@ -10,6 +10,5 @@ export class InviteStaffDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(2)
-  roleKey?: string;
+  roleId?: string;
 }

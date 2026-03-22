@@ -31,7 +31,7 @@ export class SchoolContextGuard implements CanActivate {
       },
       select: {
         id: true,
-        role: true,
+        membershipType: true,
         status: true,
       },
     });
@@ -43,7 +43,7 @@ export class SchoolContextGuard implements CanActivate {
     }
 
     req.user.membershipId = membership.id;
-    req.user.role = membership.role;
+    req.user.role = membership.membershipType;
 
     return true;
   }

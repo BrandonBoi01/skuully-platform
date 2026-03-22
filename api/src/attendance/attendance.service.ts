@@ -1,11 +1,9 @@
-// src/attendance/attendance.service.ts
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-
 import {
   AttendancePersonType,
   AttendanceSource,
@@ -13,8 +11,8 @@ import {
   AttendanceSessionStatus,
   DailyAttendanceChangeType,
   DailyAttendanceComputedFrom,
+  MembershipType,
   Prisma,
-  SchoolRole,
 } from "@prisma/client";
 
 import { DashboardGateway } from "../dashboard/dashboard.gateway";
@@ -25,9 +23,13 @@ import { MarkAttendanceSessionDto } from "./dto/mark-session.dto";
 import { MarkStaffSessionDto } from "./dto/mark-staff-session.dto";
 
 function normalizeDateToUTCStart(dateStr: string) {
-  const d = new Date(dateStr.length === 10 ? `${dateStr}T00:00:00.000Z` : dateStr);
+  const d = new Date(
+    dateStr.length === 10 ? `${dateStr}T00:00:00.000Z` : dateStr
+  );
   if (isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+  );
 }
 
 function dayEndUTC(dayStart: Date) {
@@ -55,16 +57,12 @@ export class AttendanceService {
     private readonly dashboardGateway: DashboardGateway
   ) {}
 
-  // =========================================================
-  // HELPERS
-  // =========================================================
-
-  private canOverrideBeyondTwo(role: SchoolRole) {
-    return role === SchoolRole.OWNER || role === SchoolRole.ADMIN;
+  private canOverrideBeyondTwo(role: MembershipType) {
+    return role === MembershipType.OWNER || role === MembershipType.ADMIN;
   }
 
-  private assertExcusedAllowed(role: SchoolRole) {
-    if (role !== SchoolRole.OWNER && role !== SchoolRole.ADMIN) {
+  private assertExcusedAllowed(role: MembershipType) {
+    if (role !== MembershipType.OWNER && role !== MembershipType.ADMIN) {
       throw new ForbiddenException(
         "EXCUSED requires approval (ADMIN/OWNER). Submit an excuse request instead."
       );
@@ -74,7 +72,9 @@ export class AttendanceService {
   private normalizeDashboardDay(dateStr?: string) {
     if (!dateStr) {
       const now = new Date();
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+      );
     }
 
     const day = normalizeDateToUTCStart(dateStr);
@@ -90,7 +90,9 @@ export class AttendanceService {
     return Number(((numerator / denominator) * 100).toFixed(2));
   }
 
-  private buildStatusCounts(rows: Array<{ status: AttendanceStatus }>): SessionCounts {
+  private buildStatusCounts(
+    rows: Array<{ status: AttendanceStatus }>
+  ): SessionCounts {
     const counts: SessionCounts = {
       PRESENT: 0,
       ABSENT: 0,
@@ -128,10 +130,6 @@ export class AttendanceService {
     return undefined;
   }
 
-  // =========================================================
-  // DAILY WRITE WITH AUDIT
-  // =========================================================
-
   private async setDailyStatusWithAudit(args: {
     tx: Prisma.TransactionClient;
     schoolId: string;
@@ -140,7 +138,7 @@ export class AttendanceService {
     personId: string;
     date: Date;
     newStatus: AttendanceStatus;
-    role: SchoolRole;
+    role: MembershipType;
     userId: string;
     source: AttendanceSource;
     reason?: string | null;
@@ -190,7 +188,9 @@ export class AttendanceService {
     const isLocked = existing?.isLocked ?? false;
 
     if (existing && existing.status === newStatus) {
-      throw new BadRequestException("Attendance already set to this status for the day.");
+      throw new BadRequestException(
+        "Attendance already set to this status for the day."
+      );
     }
 
     if (isLocked && !this.canOverrideBeyondTwo(role)) {
@@ -206,7 +206,8 @@ export class AttendanceService {
     }
 
     const nextDeclaredCount = existing ? Math.min(declaredCount + 1, 999) : 1;
-    const shouldLockNow = nextDeclaredCount >= 2 && !this.canOverrideBeyondTwo(role);
+    const shouldLockNow =
+      nextDeclaredCount >= 2 && !this.canOverrideBeyondTwo(role);
 
     const nextComputedFrom: DailyAttendanceComputedFrom =
       existing?.computedFrom === DailyAttendanceComputedFrom.MANUAL ||
@@ -289,10 +290,6 @@ export class AttendanceService {
       });
     }
   }
-
-  // =========================================================
-  // HISTORY
-  // =========================================================
 
   async dailyPersonHistory(
     schoolId: string,
@@ -383,10 +380,6 @@ export class AttendanceService {
     };
   }
 
-  // =========================================================
-  // SESSIONS
-  // =========================================================
-
   async createSession(
     userId: string,
     schoolId: string,
@@ -436,7 +429,9 @@ export class AttendanceService {
 
       return { message: "Session created", session };
     } catch {
-      throw new BadRequestException("Session already exists for this class/date/period");
+      throw new BadRequestException(
+        "Session already exists for this class/date/period"
+      );
     }
   }
 
@@ -444,7 +439,7 @@ export class AttendanceService {
     userId: string,
     schoolId: string,
     programId: string,
-    role: SchoolRole,
+    role: MembershipType,
     sessionId: string,
     dto: MarkAttendanceSessionDto
   ) {
@@ -461,7 +456,7 @@ export class AttendanceService {
       throw new BadRequestException("Session is closed");
     }
 
-    const studentIds: string[] = [...new Set(dto.marks.map((m) => m.studentId))];
+    const studentIds = [...new Set(dto.marks.map((m) => m.studentId))];
 
     const students = await this.prisma.student.findMany({
       where: {
@@ -530,7 +525,6 @@ export class AttendanceService {
       "student_attendance_marked"
     );
 
-    // push individual student updates
     for (const m of dto.marks) {
       this.dashboardGateway.emitStudentRefresh(
         schoolId,
@@ -547,7 +541,7 @@ export class AttendanceService {
     userId: string,
     schoolId: string,
     programId: string,
-    role: SchoolRole,
+    role: MembershipType,
     sessionId: string,
     dto: MarkStaffSessionDto
   ) {
@@ -564,7 +558,7 @@ export class AttendanceService {
       throw new BadRequestException("Session is closed");
     }
 
-    const staffIds: string[] = [...new Set(dto.marks.map((m) => m.staffId))];
+    const staffIds = [...new Set(dto.marks.map((m) => m.staffId))];
 
     const staff = await this.prisma.staff.findMany({
       where: { schoolId, programId, id: { in: staffIds }, status: "ACTIVE" },
@@ -582,8 +576,6 @@ export class AttendanceService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const m of dto.marks) {
-        const status = m.status as AttendanceStatus;
-
         await tx.staffSessionMark.upsert({
           where: {
             unique_staff_mark_per_session: {
@@ -592,7 +584,7 @@ export class AttendanceService {
             },
           },
           update: {
-            status,
+            status: m.status,
             note: m.note?.trim() || null,
             markedById: userId,
             markedAt: new Date(),
@@ -600,7 +592,7 @@ export class AttendanceService {
           create: {
             sessionId: session.id,
             staffId: m.staffId,
-            status,
+            status: m.status,
             note: m.note?.trim() || null,
             markedById: userId,
           },
@@ -613,7 +605,7 @@ export class AttendanceService {
           personType: AttendancePersonType.STAFF,
           personId: m.staffId,
           date: session.date,
-          newStatus: status,
+          newStatus: m.status,
           role,
           userId,
           source: AttendanceSource.TEACHER_ROLLCALL,
@@ -629,7 +621,11 @@ export class AttendanceService {
       "staff_attendance_marked"
     );
 
-    return { message: "Staff marked", sessionId: session.id, count: dto.marks.length };
+    return {
+      message: "Staff marked",
+      sessionId: session.id,
+      count: dto.marks.length,
+    };
   }
 
   async closeSession(schoolId: string, programId: string, sessionId: string) {
@@ -648,7 +644,10 @@ export class AttendanceService {
 
     await this.prisma.attendanceSession.update({
       where: { id: session.id },
-      data: { status: AttendanceSessionStatus.CLOSED, closedAt: new Date() },
+      data: {
+        status: AttendanceSessionStatus.CLOSED,
+        closedAt: new Date(),
+      },
     });
 
     this.dashboardGateway.emitClassRefresh(
@@ -660,10 +659,6 @@ export class AttendanceService {
 
     return { message: "Session closed" };
   }
-
-  // =========================================================
-  // DAILY SUMMARIES
-  // =========================================================
 
   async classDailySummary(
     schoolId: string,
@@ -797,10 +792,6 @@ export class AttendanceService {
     return { personType, personId, date: day, attendance: row ?? null };
   }
 
-  // =========================================================
-  // DASHBOARDS
-  // =========================================================
-
   async schoolTodayDashboard(schoolId: string, dateStr?: string) {
     const day = this.normalizeDashboardDay(dateStr);
 
@@ -815,6 +806,7 @@ export class AttendanceService {
 
     const counts = this.buildStatusCounts(rows);
     const total = rows.length;
+    const lockedCount = rows.filter((r) => r.isLocked).length;
 
     const manualCount = rows.filter(
       (r) => r.computedFrom === DailyAttendanceComputedFrom.MANUAL
@@ -825,7 +817,6 @@ export class AttendanceService {
     const mixedCount = rows.filter(
       (r) => r.computedFrom === DailyAttendanceComputedFrom.MIXED
     ).length;
-    const lockedCount = rows.filter((r) => r.isLocked).length;
 
     const positive = counts.PRESENT + counts.LATE + counts.EXCUSED;
 
@@ -845,7 +836,11 @@ export class AttendanceService {
     };
   }
 
-  async programTodayDashboard(schoolId: string, programId: string, dateStr?: string) {
+  async programTodayDashboard(
+    schoolId: string,
+    programId: string,
+    dateStr?: string
+  ) {
     const day = this.normalizeDashboardDay(dateStr);
 
     const program = await this.prisma.schoolProgram.findFirst({
@@ -868,6 +863,7 @@ export class AttendanceService {
 
     const counts = this.buildStatusCounts(rows);
     const total = rows.length;
+    const lockedCount = rows.filter((r) => r.isLocked).length;
 
     const manualCount = rows.filter(
       (r) => r.computedFrom === DailyAttendanceComputedFrom.MANUAL
@@ -878,7 +874,6 @@ export class AttendanceService {
     const mixedCount = rows.filter(
       (r) => r.computedFrom === DailyAttendanceComputedFrom.MIXED
     ).length;
-    const lockedCount = rows.filter((r) => r.isLocked).length;
 
     const positive = counts.PRESENT + counts.LATE + counts.EXCUSED;
 
@@ -972,6 +967,7 @@ export class AttendanceService {
     const positive = counts.PRESENT + counts.LATE + counts.EXCUSED;
 
     const attendanceByStudent = new Map(dailyRows.map((r) => [r.personId, r]));
+
     const roster = students.map((student) => ({
       ...student,
       attendance: attendanceByStudent.get(student.id) ?? null,
@@ -999,7 +995,8 @@ export class AttendanceService {
     studentId: string,
     days = 30
   ) {
-    const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
+    const safeDays =
+      Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
 
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, schoolId, programId },
@@ -1016,7 +1013,9 @@ export class AttendanceService {
     }
 
     const today = this.normalizeDashboardDay();
-    const start = new Date(today.getTime() - (safeDays - 1) * 24 * 60 * 60 * 1000);
+    const start = new Date(
+      today.getTime() - (safeDays - 1) * 24 * 60 * 60 * 1000
+    );
 
     const rows = await this.prisma.dailyAttendance.findMany({
       where: {
@@ -1047,7 +1046,10 @@ export class AttendanceService {
     let absenceStreak = 0;
 
     for (const row of rows) {
-      if (row.status === AttendanceStatus.PRESENT || row.status === AttendanceStatus.LATE) {
+      if (
+        row.status === AttendanceStatus.PRESENT ||
+        row.status === AttendanceStatus.LATE
+      ) {
         if (absenceStreak === 0) presentStreak += 1;
         else break;
       } else {
@@ -1112,7 +1114,11 @@ export class AttendanceService {
     };
   }
 
-  async staffTodayDashboard(schoolId: string, programId: string, dateStr?: string) {
+  async staffTodayDashboard(
+    schoolId: string,
+    programId: string,
+    dateStr?: string
+  ) {
     const day = this.normalizeDashboardDay(dateStr);
 
     const activeStaff = await this.prisma.staff.count({
@@ -1171,10 +1177,17 @@ export class AttendanceService {
     };
   }
 
-  async riskStudentsDashboard(schoolId: string, programId: string, days = 30) {
-    const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
+  async riskStudentsDashboard(
+    schoolId: string,
+    programId: string,
+    days = 30
+  ) {
+    const safeDays =
+      Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
     const today = this.normalizeDashboardDay();
-    const start = new Date(today.getTime() - (safeDays - 1) * 24 * 60 * 60 * 1000);
+    const start = new Date(
+      today.getTime() - (safeDays - 1) * 24 * 60 * 60 * 1000
+    );
 
     const students = await this.prisma.student.findMany({
       where: { schoolId, programId, status: "ACTIVE" },
@@ -1247,12 +1260,14 @@ export class AttendanceService {
           (changeCountByStudent.get(student.id) ?? 0) - totalTracked
         );
 
-        const riskScore = counts.ABSENT * 3 + counts.LATE * 1 + overrideCount * 1;
+        const riskScore = counts.ABSENT * 3 + counts.LATE + overrideCount;
 
         const reasons: string[] = [];
         if (counts.ABSENT >= 3) reasons.push("High absences");
         if (counts.LATE >= 5) reasons.push("Frequent lateness");
-        if (totalTracked > 0 && attendanceRate < 75) reasons.push("Low attendance rate");
+        if (totalTracked > 0 && attendanceRate < 75) {
+          reasons.push("Low attendance rate");
+        }
         if (overrideCount >= 2) reasons.push("Many manual changes");
 
         return {
@@ -1283,10 +1298,6 @@ export class AttendanceService {
     };
   }
 
-  // =========================================================
-  // EVENTS
-  // =========================================================
-
   async createEvent(
     userId: string,
     schoolId: string,
@@ -1295,7 +1306,9 @@ export class AttendanceService {
   ) {
     const occurredAt = new Date(dto.occurredAt);
     if (isNaN(occurredAt.getTime())) {
-      throw new BadRequestException("occurredAt must be a valid ISO datetime string");
+      throw new BadRequestException(
+        "occurredAt must be a valid ISO datetime string"
+      );
     }
 
     if (dto.personType === AttendancePersonType.STUDENT) {
@@ -1319,7 +1332,11 @@ export class AttendanceService {
     }
 
     const day = new Date(
-      Date.UTC(occurredAt.getUTCFullYear(), occurredAt.getUTCMonth(), occurredAt.getUTCDate())
+      Date.UTC(
+        occurredAt.getUTCFullYear(),
+        occurredAt.getUTCMonth(),
+        occurredAt.getUTCDate()
+      )
     );
     const dayEnd = dayEndUTC(day);
 
@@ -1393,7 +1410,13 @@ export class AttendanceService {
     source: AttendanceSource
   ) {
     const lockRow = await tx.dailyAttendance.findUnique({
-      where: { unique_daily_person_date: { personType, personId, date: dayStart } },
+      where: {
+        unique_daily_person_date: {
+          personType,
+          personId,
+          date: dayStart,
+        },
+      },
       select: { isLocked: true },
     });
 
@@ -1413,20 +1436,31 @@ export class AttendanceService {
       select: { occurredAt: true, eventType: true },
     });
 
-    const firstIn = events.find((e) => e.eventType === "CHECK_IN")?.occurredAt ?? null;
+    const firstIn =
+      events.find((e) => e.eventType === "CHECK_IN")?.occurredAt ?? null;
     const lastOut =
-      [...events].reverse().find((e) => e.eventType === "CHECK_OUT")?.occurredAt ?? null;
+      [...events].reverse().find((e) => e.eventType === "CHECK_OUT")?.occurredAt ??
+      null;
 
     const status = firstIn ? AttendanceStatus.PRESENT : null;
 
     let minutesOnSite = 0;
     if (firstIn) {
       const end = lastOut ?? new Date();
-      minutesOnSite = Math.max(0, Math.floor((end.getTime() - firstIn.getTime()) / 60000));
+      minutesOnSite = Math.max(
+        0,
+        Math.floor((end.getTime() - firstIn.getTime()) / 60000)
+      );
     }
 
     const existing = await tx.dailyAttendance.findUnique({
-      where: { unique_daily_person_date: { personType, personId, date: dayStart } },
+      where: {
+        unique_daily_person_date: {
+          personType,
+          personId,
+          date: dayStart,
+        },
+      },
       select: { computedFrom: true, status: true, id: true },
     });
 
@@ -1443,7 +1477,13 @@ export class AttendanceService {
     const beforeStatus = existing?.status ?? null;
 
     const daily = await tx.dailyAttendance.upsert({
-      where: { unique_daily_person_date: { personType, personId, date: dayStart } },
+      where: {
+        unique_daily_person_date: {
+          personType,
+          personId,
+          date: dayStart,
+        },
+      },
       update: {
         ...(shouldOverrideStatus && status ? { status } : {}),
         firstIn,
@@ -1512,10 +1552,6 @@ export class AttendanceService {
       });
     }
   }
-
-  // =========================================================
-  // EXCUSE / LEAVEOUT HELPERS
-  // =========================================================
 
   private async getExcusedStudentSetForDay(
     schoolId: string,

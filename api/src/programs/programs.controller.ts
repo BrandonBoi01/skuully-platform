@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProgramContextGuard } from "../auth/program-context.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -36,21 +36,21 @@ export class ProgramsController {
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Post("schools/programs")
   createProgram(@Req() req: any, @Body() dto: CreateProgramDto) {
     return this.programs.createProgram(req.user.schoolId, dto);
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Post("schools/programs/:programId/seed")
   seedProgram(@Req() req: any, @Param("programId") programId: string) {
     return this.programs.seedProgram(req.user.schoolId, programId);
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Post("schools/programs/:programId/generate-classes")
   generateClasses(@Req() req: any, @Param("programId") programId: string) {
     return this.programs.generateClasses(req.user.schoolId, programId);
@@ -63,7 +63,7 @@ export class ProgramsController {
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN, SchoolRole.TEACHER)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
   @Post("programs/switch/:programId")
   async switchProgram(
     @Req() req: any,

@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Public } from "../auth/public.decorator";
@@ -39,14 +39,14 @@ export class SchoolsController {
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Post("invite")
   async invite(@Req() req: any, @Body() dto: InviteStaffDto) {
     return this.schools.inviteStaff(
       req.user.schoolId,
       req.user.role,
       dto.email,
-      dto.role
+      dto.membershipType
     );
   }
 
@@ -90,7 +90,7 @@ export class SchoolsController {
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("admin-check")
   async adminCheck(@Req() req: any) {
     return {
@@ -103,7 +103,7 @@ export class SchoolsController {
   }
 
   @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(SchoolRole.OWNER, SchoolRole.ADMIN)
+  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
   @Get("invites")
   async invites(@Req() req: any) {
     return this.schools.listInvites(req.user.schoolId);

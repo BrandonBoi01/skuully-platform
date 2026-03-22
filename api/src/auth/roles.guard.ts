@@ -1,4 +1,3 @@
-// src/auth/roles.guard.ts
 import {
   CanActivate,
   ExecutionContext,
@@ -6,7 +5,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { SchoolRole } from "@prisma/client";
+import { MembershipType } from "@prisma/client";
 import { ROLES_KEY } from "./roles.decorator";
 
 @Injectable()
@@ -15,7 +14,7 @@ export class RolesGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles =
-      this.reflector.getAllAndOverride<SchoolRole[]>(ROLES_KEY, [
+      this.reflector.getAllAndOverride<MembershipType[]>(ROLES_KEY, [
         context.getHandler(),
         context.getClass(),
       ]) ?? [];
@@ -27,7 +26,7 @@ export class RolesGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const user = req.user as {
       userId?: string;
-      role?: SchoolRole | null;
+      role?: MembershipType | null;
     };
 
     if (!user?.userId) {
@@ -36,7 +35,7 @@ export class RolesGuard implements CanActivate {
 
     if (!user.role) {
       throw new ForbiddenException(
-        "Missing school role in token/context. Switch to a school first."
+        "Missing school role. Switch to a school first."
       );
     }
 
