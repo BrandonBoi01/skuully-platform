@@ -32,6 +32,8 @@ export class OnboardingController {
     return this.onboardingService.setRoute(req.user.userId, dto);
   }
 
+  /* ---------------- BUILD INSTITUTION ---------------- */
+
   @Post("build/identity")
   saveBuildIdentity(@Req() req: any, @Body() dto: SaveBuildIdentityDto) {
     return this.onboardingService.saveBuildIdentity(req.user.userId, dto);
@@ -86,5 +88,64 @@ export class OnboardingController {
   @Post("build/complete")
   completeBuildInstitution(@Req() req: any) {
     return this.onboardingService.completeBuildInstitution(req.user.userId);
+  }
+
+  /* ---------------- JOIN INSTITUTION ---------------- */
+
+  @Get("join/search")
+  searchJoinInstitutions(
+    @Query("query") query: string,
+    @Query("mode") mode: "name" | "skuully_id",
+    @Query("role") role: string
+  ) {
+    return this.onboardingService.searchJoinInstitutions({
+      query,
+      mode,
+      role,
+    });
+  }
+
+  @Post("join/invite")
+  submitJoinInviteCode(
+    @Req() req: any,
+    @Body() dto: { code: string; role: string }
+  ) {
+    return this.onboardingService.submitJoinInviteCode(req.user.userId, dto);
+  }
+
+  @Post("join/select")
+  selectJoinInstitution(
+    @Req() req: any,
+    @Body() dto: { schoolId: string; role: string }
+  ) {
+    return this.onboardingService.selectJoinInstitution(req.user.userId, dto);
+  }
+
+  @Post("join/complete")
+  completeJoinInstitution(@Req() req: any) {
+    return this.onboardingService.completeJoinInstitution(req.user.userId);
+  }
+
+  /* ---------------- EXPLORE SKUULLY ---------------- */
+
+  @Post("explore/identity")
+  saveExploreIdentity(
+    @Req() req: any,
+    @Body() dto: { skuullyId: string }
+  ) {
+    return this.onboardingService.saveExploreIdentity(req.user.userId, dto);
+  }
+
+  @Post("explore/profile")
+  saveExploreProfile(
+    @Req() req: any,
+    @Body() dto: { fullName: string; headline?: string }
+  ) {
+    return this.onboardingService.saveExploreProfile(req.user.userId, dto);
+  }
+
+  @Post("explore/complete")
+  completeExploreSkuully(@Req() req: any) {
+    return this.onboardingService.completeExploreSkuully(req.user.userId);
   }
 }

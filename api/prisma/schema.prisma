@@ -70,6 +70,7 @@ model User {
   passwordHash String?
   skuullyId    String  @unique
   avatarUrl    String?
+  headline     String?
 
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
@@ -186,6 +187,11 @@ model UserOnboarding {
   countryCodeDraft     String?
   skuullyIdDraft       String?
 
+  joinRoleDraft        String?
+  joinSchoolIdDraft    String?
+  joinInviteCodeDraft  String?
+  exploreHeadlineDraft String?
+
   academicLabelDraft String?
   academicItemsDraft String[]
   academicSetLater   Boolean  @default(false)
@@ -210,6 +216,7 @@ model UserOnboarding {
 
   @@index([route])
   @@index([institutionTypeDraft])
+  @@index([joinSchoolIdDraft])
 }
 
 model AuthAuditLog {
