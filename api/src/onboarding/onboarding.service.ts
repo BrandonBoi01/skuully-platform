@@ -42,6 +42,10 @@ export class OnboardingService {
         countryDraft: true,
         countryCodeDraft: true,
         skuullyIdDraft: true,
+        joinRoleDraft: true,
+        joinSchoolIdDraft: true,
+        joinInviteCodeDraft: true,
+        exploreHeadlineDraft: true,
         academicLabelDraft: true,
         academicItemsDraft: true,
         academicSetLater: true,
@@ -54,10 +58,6 @@ export class OnboardingService {
         phoneNationalDraft: true,
         phoneE164Draft: true,
         phoneSetLater: true,
-        joinRoleDraft: true,
-        joinSchoolIdDraft: true,
-        joinInviteCodeDraft: true,
-        exploreHeadlineDraft: true,
       },
     });
 
@@ -72,6 +72,10 @@ export class OnboardingService {
             country: onboarding.countryDraft,
             countryCode: onboarding.countryCodeDraft,
             skuullyId: onboarding.skuullyIdDraft,
+            joinRole: onboarding.joinRoleDraft,
+            joinSchoolId: onboarding.joinSchoolIdDraft,
+            joinInviteCode: onboarding.joinInviteCodeDraft,
+            exploreHeadline: onboarding.exploreHeadlineDraft,
             academicLabel: onboarding.academicLabelDraft,
             academicItems: onboarding.academicItemsDraft ?? [],
             academicSetLater: onboarding.academicSetLater,
@@ -84,10 +88,6 @@ export class OnboardingService {
             phoneNational: onboarding.phoneNationalDraft,
             phoneE164: onboarding.phoneE164Draft,
             phoneSetLater: onboarding.phoneSetLater,
-            joinRole: onboarding.joinRoleDraft,
-            joinSchoolId: onboarding.joinSchoolIdDraft,
-            joinInviteCode: onboarding.joinInviteCodeDraft,
-            exploreHeadline: onboarding.exploreHeadlineDraft,
           }
         : null,
     };
