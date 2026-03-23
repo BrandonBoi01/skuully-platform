@@ -1,6 +1,10 @@
 import { PrismaClient } from "@prisma/client";
+import { seedGeo } from "./seed-geo";
 
 const prisma = new PrismaClient();
+
+async function main() {
+  // keep your existing seed logic here first
 
 type TemplateSeed = {
   code: string;
@@ -209,6 +213,18 @@ async function main() {
 main()
   .catch((e) => {
     console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+    await seedGeo(prisma);
+}
+
+main()
+  .catch((error) => {
+    console.error(error);
     process.exit(1);
   })
   .finally(async () => {

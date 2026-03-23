@@ -1,7 +1,5 @@
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
-
 type GeoCountrySeed = {
   code: string;
   iso3?: string;
@@ -154,7 +152,8 @@ const countries: GeoCountrySeed[] = [
     timezones: [{ name: "Asia/Kolkata", utcOffset: "+05:30" }],
   },
 ];
-async function main() {
+
+export async function seedGeo(prisma: PrismaClient) {
   for (const country of countries) {
     const created = await prisma.geoCountry.upsert({
       where: { code: country.code },
@@ -213,12 +212,3 @@ async function main() {
 
   console.log(`✅ Seeded geo countries: ${countries.length}`);
 }
-
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
