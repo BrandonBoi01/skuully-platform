@@ -283,7 +283,7 @@ export class EmailService {
   }) {
     const year = new Date().getFullYear();
     const headerLogoUrl = this.assetUrl("/skuully-originallogo-originalname.svg");
-    const footerLogoUrl = this.assetUrl("/logo.png");
+    const footerLogoUrl = this.assetUrl("/skuully-originallogo-originalname.svg");
 
     return `
 <!doctype html>
@@ -303,6 +303,7 @@ export class EmailService {
         <td align="center" style="padding:24px 12px 32px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;margin:0 auto;">
             
+            <!-- Header -->
             <tr>
               <td style="background:#ffffff;padding:18px 20px;border-top-left-radius:20px;border-top-right-radius:20px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
@@ -311,8 +312,8 @@ export class EmailService {
                       <img
                         src="${this.escapeHtml(headerLogoUrl)}"
                         alt="${this.escapeHtml(this.appName)}"
-                        width="104"
-                        style="display:block;max-width:104px;height:auto;border:0;"
+                        width="112"
+                        style="display:block;max-width:112px;height:auto;border:0;"
                       />
                     </td>
                     <td valign="middle" align="right" style="font-size:12px;line-height:18px;color:#7c86a5;">
@@ -323,12 +324,14 @@ export class EmailService {
               </td>
             </tr>
 
+            <!-- Divider top -->
             <tr>
               <td style="height:3px;background:linear-gradient(90deg,#4a73eb 0%,#6a56c7 38%,#a55e95 68%,#c6264a 100%);font-size:0;line-height:0;">&nbsp;</td>
             </tr>
 
+            <!-- Body -->
             <tr>
-              <td style="background:#131722;padding:30px 28px;">
+              <td style="background:#171b24;padding:30px 28px;">
                 <h1 style="margin:0 0 12px;font-size:32px;line-height:38px;font-weight:700;color:#ffffff;">
                   ${this.escapeHtml(input.title)}
                 </h1>
@@ -339,7 +342,7 @@ export class EmailService {
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td style="background:#1a2030;border:1px solid #2e3750;border-radius:16px;padding:20px;">
+                    <td style="background:#222735;border:1px solid #353d52;border-radius:16px;padding:20px;">
                       ${input.bodyHtml}
                     </td>
                   </tr>
@@ -357,41 +360,42 @@ export class EmailService {
               </td>
             </tr>
 
+            <!-- Divider bottom -->
             <tr>
-              <td style="height:1px;background:#e8ebf1;font-size:0;line-height:0;">&nbsp;</td>
+              <td style="height:3px;background:linear-gradient(90deg,#4a73eb 0%,#6a56c7 38%,#a55e95 68%,#c6264a 100%);font-size:0;line-height:0;">&nbsp;</td>
             </tr>
 
+            <!-- Footer -->
             <tr>
-              <td style="background:#ffffff;padding:18px 20px 20px;border-bottom-left-radius:20px;border-bottom-right-radius:20px;">
+              <td style="background:#ffffff;padding:20px 20px 22px;border-bottom-left-radius:20px;border-bottom-right-radius:20px;" align="center">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td style="padding:0 0 10px;">
+                    <td align="center" style="padding:0 0 10px;">
                       <img
                         src="${this.escapeHtml(footerLogoUrl)}"
                         alt="${this.escapeHtml(this.appName)}"
-                        width="22"
-                        height="22"
-                        style="display:block;width:22px;height:22px;border:0;border-radius:7px;"
+                        width="92"
+                        style="display:block;max-width:92px;height:auto;border:0;margin:0 auto;"
                       />
                     </td>
                   </tr>
                   <tr>
-                    <td style="padding:0 0 6px;font-size:12px;line-height:18px;color:#4b5563;">
+                    <td align="center" style="padding:0 0 6px;font-size:11px;line-height:17px;color:#4b5563;">
                       ${this.escapeHtml(input.footerTagline)}
                     </td>
                   </tr>
                   <tr>
-                    <td style="padding:0 0 4px;font-size:11px;line-height:16px;color:#6b7280;">
+                    <td align="center" style="padding:0 0 4px;font-size:10px;line-height:16px;color:#6b7280;">
                       Skuully AI-powered technology for connected academic identity, learning, and operations.
                     </td>
                   </tr>
                   <tr>
-                    <td style="padding:0 0 4px;font-size:11px;line-height:16px;color:#6b7280;">
+                    <td align="center" style="padding:0 0 4px;font-size:10px;line-height:16px;color:#6b7280;">
                       13th Floor, Bruce House, Standard Street, Nairobi CBD
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-size:11px;line-height:16px;color:#8a93a7;">
+                    <td align="center" style="font-size:10px;line-height:16px;color:#8a93a7;">
                       © ${year} Bracelgate Group Ltd. All rights reserved.
                     </td>
                   </tr>
@@ -416,7 +420,7 @@ export class EmailService {
           display:inline-block;
           padding:13px 18px;
           border-radius:12px;
-          background:#5d5af6;
+          background:linear-gradient(135deg,#4a73eb 0%,#6a56c7 38%,#a55e95 68%,#c6264a 100%);
           color:#ffffff;
           text-decoration:none;
           font-size:14px;
@@ -435,12 +439,12 @@ export class EmailService {
         style="
           padding:18px;
           border-radius:14px;
-          background:#22283a;
-          border:1px solid #343d56;
+          background:#2a3040;
+          border:1px solid #40495f;
           text-align:center;
         "
       >
-        <div style="font-size:11px;line-height:16px;letter-spacing:0.18em;text-transform:uppercase;color:#98a3c4;margin-bottom:12px;">
+        <div style="font-size:11px;line-height:16px;letter-spacing:0.18em;text-transform:uppercase;color:#a9b4cf;margin-bottom:12px;">
           Verification code
         </div>
         <div style="font-size:34px;line-height:38px;font-weight:800;letter-spacing:0.28em;color:#ffffff;">
@@ -452,10 +456,10 @@ export class EmailService {
 
   private textStyle(tone: "body-main" | "body-muted") {
     if (tone === "body-main") {
-      return "font-size:16px;line-height:28px;color:#dde5f7;";
+      return "font-size:16px;line-height:28px;color:#e1e7f5;";
     }
 
-    return "font-size:14px;line-height:24px;color:#a9b4cf;";
+    return "font-size:14px;line-height:24px;color:#aeb7cc;";
   }
 
   private firstNameFromFullName(fullName?: string | null) {
