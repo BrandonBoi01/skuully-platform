@@ -3,16 +3,12 @@ import { seedGeo } from "./seed-geo";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  // keep your existing seed logic here first
-
 type TemplateSeed = {
   code: string;
   name: string;
   description?: string;
   grades: { name: string; order: number; stage?: string }[];
   subjects: { name: string; code?: string; isCore?: boolean }[];
-  // map: gradeOrder -> subjectNames
   gradeSubjects: Record<number, string[]>;
 };
 
@@ -90,7 +86,6 @@ const seeds: TemplateSeed[] = [
 ];
 
 async function seedTemplate(t: TemplateSeed) {
-  // 1) Upsert template
   const template = await prisma.curriculumTemplate.upsert({
     where: { code: t.code },
     update: {
@@ -105,15 +100,18 @@ async function seedTemplate(t: TemplateSeed) {
     select: { id: true },
   });
 
-  // 2) DEV-ONLY reset (idempotent seeding)
-  // If you want to keep edits in DB, remove this block later.
   await prisma.curriculumTemplateGradeSubject.deleteMany({
     where: { grade: { templateId: template.id } },
   });
-  await prisma.curriculumTemplateGrade.deleteMany({ where: { templateId: template.id } });
-  await prisma.curriculumTemplateSubject.deleteMany({ where: { templateId: template.id } });
 
-  // 3) Create subjects
+  await prisma.curriculumTemplateGrade.deleteMany({
+    where: { templateId: template.id },
+  });
+
+  await prisma.curriculumTemplateSubject.deleteMany({
+    where: { templateId: template.id },
+  });
+
   await prisma.curriculumTemplateSubject.createMany({
     data: t.subjects.map((s) => ({
       templateId: template.id,
@@ -123,14 +121,13 @@ async function seedTemplate(t: TemplateSeed) {
     })),
   });
 
-  // 4) Map subjectName -> subjectId
   const subjectRows = await prisma.curriculumTemplateSubject.findMany({
     where: { templateId: template.id },
     select: { id: true, name: true },
   });
+
   const subjectIdByName = new Map(subjectRows.map((s) => [s.name, s.id]));
 
-  // 5) Create grades + grade-subject links
   for (const g of t.grades) {
     const grade = await prisma.curriculumTemplateGrade.create({
       data: {
@@ -197,7 +194,10 @@ async function seedCBCStudentFields() {
     });
   }
 
-  console.log("✅ Seeded CBC student fields:", fields.map((f) => f.key).join(", "));
+  console.log(
+    "✅ Seeded CBC student fields:",
+    fields.map((f) => f.key).join(", ")
+  );
 }
 
 async function main() {
@@ -206,20 +206,13 @@ async function main() {
   }
 
   await seedCBCStudentFields();
+  await seedGeo(prisma);
 
-  console.log("✅ Seeded curriculum templates:", seeds.map((s) => s.code).join(", "));
-}
-
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
-
-    await seedGeo(prisma);
+  console.log(
+    "✅ Seeded curriculum templates:",
+    seeds.map((s) => s.code).join(", ")
+  );
+  console.log("✅ Geo seed completed");
 }
 
 main()
