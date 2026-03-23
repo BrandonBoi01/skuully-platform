@@ -10,8 +10,7 @@ export class EmailService {
   private readonly replyTo?: string;
   private readonly appName: string;
   private readonly appUrl: string;
-  private readonly brandAddress: string;
-  private readonly frontendBaseUrl: string;
+  private readonly webUrl: string;
 
   constructor(private readonly config: ConfigService) {
     const apiKey = this.config.get<string>("RESEND_API_KEY")?.trim();
@@ -23,17 +22,15 @@ export class EmailService {
     this.replyTo =
       this.config.get<string>("EMAIL_REPLY_TO")?.trim() || undefined;
 
-    this.appName =
-      this.config.get<string>("APP_NAME")?.trim() || "Skuully";
+    this.appName = this.config.get<string>("APP_NAME")?.trim() || "Skuully";
 
     this.appUrl =
       this.config.get<string>("APP_URL")?.trim() || "https://skuully.app";
 
-    this.frontendBaseUrl =
-      this.config.get<string>("FRONTEND_URL")?.trim() || "https://skuully.app";
-
-    this.brandAddress =
-      "13th Floor, Bruce House, Standard Street, Nairobi CBD";
+    this.webUrl =
+      this.config.get<string>("WEB_URL")?.trim() ||
+      this.config.get<string>("FRONTEND_URL")?.trim() ||
+      "https://skuully.app";
 
     this.resend = apiKey ? new Resend(apiKey) : null;
 
@@ -53,31 +50,31 @@ export class EmailService {
     const subject = `Verify your ${this.appName} email`;
 
     const html = this.renderEmailTemplate({
-      previewText: `Your verification code is ${input.code}`,
-      label: "Email verification",
+      preheader: `Your ${this.appName} verification code is ${input.code}.`,
+      headerLabel: "Email verification",
       title: "Confirm your email",
-      intro: `Hi ${this.escapeHtml(firstName)}, use the verification code below to activate your ${this.appName} account.`,
-      contentHtml: `
-        ${this.renderCodeCard(input.code)}
-        <p style="${this.textStyle("muted")} margin: 18px 0 0;">
-          This code expires in <strong style="color:#111827;">10 minutes</strong>.
+      intro: `Hi ${this.escapeHtml(
+        firstName
+      )}, enter the code below to verify your email and continue with your ${this.appName} account.`,
+      bodyHtml: `
+        ${this.renderCodeBlock(input.code)}
+        <p style="${this.textStyle("body-muted")} margin:16px 0 0;">
+          This code expires in <strong style="color:#ffffff;">10 minutes</strong>.
         </p>
       `,
-      helperText:
-        "You’re receiving this email because a verification request was made for your account. If this wasn’t you, you can safely ignore this email.",
-      footerReason:
-        "You received this email because of a Skuully account verification action.",
+      supportNote:
+        "If you didn’t request this, you can safely ignore this email.",
+      footerTagline: "The future of education is here.",
     });
 
     const text = [
       `Verify your ${this.appName} email`,
       ``,
       `Hi ${firstName},`,
-      `Your verification code is: ${input.code}`,
+      `Enter this code to verify your email: ${input.code}`,
       `This code expires in 10 minutes.`,
       ``,
-      `You received this email because a verification request was made for your account.`,
-      `If this wasn’t you, you can safely ignore this email.`,
+      `If you didn’t request this, you can safely ignore this email.`,
     ].join("\n");
 
     await this.send({
@@ -96,29 +93,90 @@ export class EmailService {
     const subject = `Welcome to ${this.appName}`;
 
     const html = this.renderEmailTemplate({
-      previewText: `Your ${this.appName} account is ready`,
-      label: "Welcome",
-      title: "Your account is ready",
-      intro: `Hi ${this.escapeHtml(firstName)}, your email has been verified and your ${this.appName} account is now active.`,
-      contentHtml: `
-        <div style="margin-top: 8px;">
-          ${this.renderButton(this.appUrl, `Open ${this.appName}`)}
-        </div>
+      preheader: `Your ${this.appName} account is ready.`,
+      headerLabel: "Welcome",
+      title: "You’re all set",
+      intro: `Hi ${this.escapeHtml(
+        firstName
+      )}, your account is ready. ${this.appName} brings identity, learning, and academic operations into one connected experience.`,
+      bodyHtml: `
+        <p style="${this.textStyle("body-main")} margin:0 0 18px;">
+          Start with your workspace and continue building your path inside Skuully.
+        </p>
+        ${this.renderButton(this.appUrl, `Open ${this.appName}`)}
       `,
-      helperText:
-        "You can now continue into your account and begin setting up your workspace.",
-      footerReason:
-        "You received this email because your Skuully account was successfully activated.",
+      supportNote: `You’re receiving this email because your ${this.appName} account was successfully activated.`,
+      footerTagline:
+        "Connected identity, learning, and operations for modern education.",
     });
 
     const text = [
       `Welcome to ${this.appName}`,
       ``,
       `Hi ${firstName},`,
-      `Your email has been verified and your account is now active.`,
+      `Your account is ready.`,
       `Open ${this.appUrl}`,
       ``,
-      `You received this email because your account was successfully activated.`,
+      `You’re receiving this email because your account was successfully activated.`,
+    ].join("\n");
+
+    await this.send({
+      to: input.to,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  async sendSecurityEventEmail(input: {
+    to: string;
+    fullName: string;
+    title: string;
+    details: string[];
+  }) {
+    const firstName = this.firstNameFromFullName(input.fullName);
+    const subject = `${this.appName} security notice`;
+
+    const detailsHtml = input.details
+      .map(
+        (item) => `
+          <tr>
+            <td style="padding:0 0 10px 0; vertical-align:top;">
+              <span style="display:inline-block; width:7px; height:7px; border-radius:999px; background:#5d5af6; margin-right:10px;"></span>
+              <span style="font-size:14px; line-height:24px; color:#d6def5;">${this.escapeHtml(
+                item
+              )}</span>
+            </td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const html = this.renderEmailTemplate({
+      preheader: `${input.title} — important account security information.`,
+      headerLabel: "Security notice",
+      title: this.escapeHtml(input.title),
+      intro: `Hi ${this.escapeHtml(
+        firstName
+      )}, we noticed an important security event on your ${this.appName} account.`,
+      bodyHtml: `
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          ${detailsHtml}
+        </table>
+      `,
+      supportNote:
+        "If you don’t recognize this activity, secure your account immediately.",
+      footerTagline: "Secure identity for the future of education.",
+    });
+
+    const text = [
+      `${this.appName} security notice`,
+      ``,
+      `Hi ${firstName},`,
+      input.title,
+      ...input.details.map((d) => `- ${d}`),
+      ``,
+      `If you don’t recognize this activity, secure your account immediately.`,
     ].join("\n");
 
     await this.send({
@@ -138,19 +196,21 @@ export class EmailService {
     const subject = `Reset your ${this.appName} password`;
 
     const html = this.renderEmailTemplate({
-      previewText: `Reset your ${this.appName} password`,
-      label: "Password reset",
+      preheader: `Reset your ${this.appName} password.`,
+      headerLabel: "Password reset",
       title: "Reset your password",
-      intro: `Hi ${this.escapeHtml(firstName)}, we received a request to reset your ${this.appName} password.`,
-      contentHtml: `
-        <div style="margin-top: 8px;">
-          ${this.renderButton(input.resetUrl, "Reset password")}
-        </div>
+      intro: `Hi ${this.escapeHtml(
+        firstName
+      )}, we received a request to reset your ${this.appName} password.`,
+      bodyHtml: `
+        <p style="${this.textStyle("body-main")} margin:0 0 18px;">
+          Use the button below to choose a new password.
+        </p>
+        ${this.renderButton(input.resetUrl, "Reset password")}
       `,
-      helperText:
-        "If you didn’t request this, you can safely ignore this email. Your password will remain unchanged.",
-      footerReason:
-        "You received this email because a password reset was requested for your Skuully account.",
+      supportNote:
+        "If you didn’t request this, you can safely ignore this email.",
+      footerTagline: "Secure access for the future of education.",
     });
 
     const text = [
@@ -179,26 +239,27 @@ export class EmailService {
     const subject = `Your ${this.appName} password was changed`;
 
     const html = this.renderEmailTemplate({
-      previewText: `Your ${this.appName} password was changed`,
-      label: "Security update",
+      preheader: `Your ${this.appName} password was changed successfully.`,
+      headerLabel: "Security update",
       title: "Password updated",
-      intro: `Hi ${this.escapeHtml(firstName)}, your ${this.appName} password was successfully changed.`,
-      contentHtml: `
-        <p style="${this.textStyle("main")} margin: 0;">
+      intro: `Hi ${this.escapeHtml(
+        firstName
+      )}, your ${this.appName} password was changed successfully.`,
+      bodyHtml: `
+        <p style="${this.textStyle("body-main")} margin:0;">
           If you made this change, no further action is needed.
         </p>
       `,
-      helperText:
-        "If this wasn’t you, secure your account immediately and reset your password.",
-      footerReason:
-        "You received this email because a security change was made on your Skuully account.",
+      supportNote:
+        "If this wasn’t you, secure your account immediately.",
+      footerTagline: "Secure identity, trusted access, connected education.",
     });
 
     const text = [
       `Your ${this.appName} password was changed`,
       ``,
       `Hi ${firstName},`,
-      `Your password was successfully changed.`,
+      `Your password was changed successfully.`,
       ``,
       `If this wasn’t you, secure your account immediately.`,
     ].join("\n");
@@ -211,109 +272,51 @@ export class EmailService {
     });
   }
 
-  async sendSecurityEventEmail(input: {
-    to: string;
-    fullName: string;
-    title: string;
-    details: string[];
-  }) {
-    const firstName = this.firstNameFromFullName(input.fullName);
-    const subject = `${this.appName} security notice: ${input.title}`;
-
-    const detailsHtml = input.details
-      .map(
-        (item) => `
-          <tr>
-            <td style="padding:0 0 10px 0;">
-              <span style="display:inline-block; width:6px; height:6px; border-radius:999px; background:#6a56c7; margin-right:10px;"></span>
-              <span style="font-size:14px; line-height:24px; color:#374151;">${this.escapeHtml(
-                item
-              )}</span>
-            </td>
-          </tr>
-        `
-      )
-      .join("");
-
-    const html = this.renderEmailTemplate({
-      previewText: input.title,
-      label: "Security notice",
-      title: this.escapeHtml(input.title),
-      intro: `Hi ${this.escapeHtml(firstName)}, here is an important update related to your account security.`,
-      contentHtml: `
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-          ${detailsHtml}
-        </table>
-      `,
-      helperText:
-        "If this activity was not yours, secure your account immediately.",
-      footerReason:
-        "You received this email because a security-related account event was detected on Skuully.",
-    });
-
-    const text = [
-      `${this.appName} security notice: ${input.title}`,
-      ``,
-      `Hi ${firstName},`,
-      ...input.details.map((d) => `- ${d}`),
-      ``,
-      `You received this email because a security-related account event was detected.`,
-    ].join("\n");
-
-    await this.send({
-      to: input.to,
-      subject,
-      html,
-      text,
-    });
-  }
-
   private renderEmailTemplate(input: {
-    previewText: string;
-    label: string;
+    preheader: string;
+    headerLabel: string;
     title: string;
     intro: string;
-    contentHtml: string;
-    helperText: string;
-    footerReason: string;
+    bodyHtml: string;
+    supportNote?: string;
+    footerTagline: string;
   }) {
     const year = new Date().getFullYear();
-
-    const logoWithName = `${this.frontendBaseUrl}/skuully-originallogo-originalname.svg`;
-    const footerLogo = `${this.frontendBaseUrl}/logo.png`;
+    const headerLogoUrl = this.assetUrl("/skuully-originallogo-originalname.svg");
+    const footerLogoUrl = this.assetUrl("/logo.png");
 
     return `
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta charSet="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${this.escapeHtml(input.title)}</title>
   </head>
-  <body style="margin:0; padding:0; background:#f3f4f6; font-family:'Open Sans', Arial, Helvetica, sans-serif; color:#111827;">
-    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
-      ${this.escapeHtml(input.previewText)}
+  <body style="margin:0;padding:0;background:#f3f4f8;font-family:'Open Sans',Arial,Helvetica,sans-serif;color:#111827;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
+      ${this.escapeHtml(input.preheader)}
     </div>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background:#f3f4f6; margin:0; padding:0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f3f4f8;">
       <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb;">
+        <td align="center" style="padding:24px 12px 32px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;margin:0 auto;">
             
             <tr>
-              <td style="padding:28px 28px 20px; border-bottom:1px solid #eceff5;">
+              <td style="background:#ffffff;padding:18px 20px;border-top-left-radius:20px;border-top-right-radius:20px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td valign="middle" align="left">
                       <img
-                        src="${this.escapeHtml(logoWithName)}"
+                        src="${this.escapeHtml(headerLogoUrl)}"
                         alt="${this.escapeHtml(this.appName)}"
-                        style="display:block; max-width:150px; height:auto; border:0;"
-                        width="150"
+                        width="104"
+                        style="display:block;max-width:104px;height:auto;border:0;"
                       />
                     </td>
-                    <td valign="middle" align="right" style="font-size:13px; line-height:20px; color:#6b7280;">
-                      ${this.escapeHtml(input.label)}
+                    <td valign="middle" align="right" style="font-size:12px;line-height:18px;color:#7c86a5;">
+                      ${this.escapeHtml(input.headerLabel)}
                     </td>
                   </tr>
                 </table>
@@ -321,66 +324,74 @@ export class EmailService {
             </tr>
 
             <tr>
-              <td style="padding:0;">
-                <div style="height:4px; background:linear-gradient(90deg,#4a73eb 0%, #6a56c7 40%, #a55e95 72%, #c6264a 100%);"></div>
-              </td>
+              <td style="height:3px;background:linear-gradient(90deg,#4a73eb 0%,#6a56c7 38%,#a55e95 68%,#c6264a 100%);font-size:0;line-height:0;">&nbsp;</td>
             </tr>
 
             <tr>
-              <td style="padding:32px 28px 28px; background:#ffffff;">
-                <h1 style="margin:0 0 14px; font-size:34px; line-height:40px; font-weight:700; color:#111827;">
+              <td style="background:#131722;padding:30px 28px;">
+                <h1 style="margin:0 0 12px;font-size:32px;line-height:38px;font-weight:700;color:#ffffff;">
                   ${this.escapeHtml(input.title)}
                 </h1>
 
-                <p style="${this.textStyle("main")} margin:0 0 24px;">
+                <p style="${this.textStyle("body-main")} margin:0 0 24px;">
                   ${input.intro}
                 </p>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td style="padding:24px; background:#0b1020; border:1px solid #1c2748;">
-                      ${input.contentHtml}
+                    <td style="background:#1a2030;border:1px solid #2e3750;border-radius:16px;padding:20px;">
+                      ${input.bodyHtml}
                     </td>
                   </tr>
                 </table>
 
-                <p style="${this.textStyle("muted")} margin:0;">
-                  ${this.escapeHtml(input.helperText)}
+                ${
+                  input.supportNote
+                    ? `
+                <p style="${this.textStyle("body-muted")} margin:20px 0 0;">
+                  ${this.escapeHtml(input.supportNote)}
                 </p>
+                `
+                    : ""
+                }
               </td>
             </tr>
 
             <tr>
-              <td style="padding:24px 28px 28px; border-top:1px solid #eceff5; background:#fafafa;">
+              <td style="height:1px;background:#e8ebf1;font-size:0;line-height:0;">&nbsp;</td>
+            </tr>
+
+            <tr>
+              <td style="background:#ffffff;padding:18px 20px 20px;border-bottom-left-radius:20px;border-bottom-right-radius:20px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td align="center" style="padding:0 0 12px;">
+                    <td style="padding:0 0 10px;">
                       <img
-                        src="${this.escapeHtml(footerLogo)}"
+                        src="${this.escapeHtml(footerLogoUrl)}"
                         alt="${this.escapeHtml(this.appName)}"
-                        width="32"
-                        height="32"
-                        style="display:block; width:32px; height:32px; border-radius:8px; border:0;"
+                        width="22"
+                        height="22"
+                        style="display:block;width:22px;height:22px;border:0;border-radius:7px;"
                       />
                     </td>
                   </tr>
                   <tr>
-                    <td align="center" style="padding:0 0 8px; font-size:13px; line-height:22px; color:#374151;">
-                      The future of education is here.
+                    <td style="padding:0 0 6px;font-size:12px;line-height:18px;color:#4b5563;">
+                      ${this.escapeHtml(input.footerTagline)}
                     </td>
                   </tr>
                   <tr>
-                    <td align="center" style="padding:0 0 6px; font-size:12px; line-height:20px; color:#6b7280;">
-                      ${this.escapeHtml(this.brandAddress)}
+                    <td style="padding:0 0 4px;font-size:11px;line-height:16px;color:#6b7280;">
+                      Skuully AI-powered technology for connected academic identity, learning, and operations.
                     </td>
                   </tr>
                   <tr>
-                    <td align="center" style="padding:0 0 6px; font-size:12px; line-height:20px; color:#6b7280;">
-                      ${this.escapeHtml(input.footerReason)}
+                    <td style="padding:0 0 4px;font-size:11px;line-height:16px;color:#6b7280;">
+                      13th Floor, Bruce House, Standard Street, Nairobi CBD
                     </td>
                   </tr>
                   <tr>
-                    <td align="center" style="font-size:12px; line-height:20px; color:#9ca3af;">
+                    <td style="font-size:11px;line-height:16px;color:#8a93a7;">
                       © ${year} Bracelgate Group Ltd. All rights reserved.
                     </td>
                   </tr>
@@ -403,9 +414,9 @@ export class EmailService {
         href="${this.escapeHtml(url)}"
         style="
           display:inline-block;
-          padding:14px 22px;
+          padding:13px 18px;
           border-radius:12px;
-          background:linear-gradient(135deg,#4a73eb 0%, #6a56c7 40%, #a55e95 72%, #c6264a 100%);
+          background:#5d5af6;
           color:#ffffff;
           text-decoration:none;
           font-size:14px;
@@ -418,40 +429,43 @@ export class EmailService {
     `;
   }
 
-  private renderCodeCard(code: string) {
+  private renderCodeBlock(code: string) {
     return `
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-        <tr>
-          <td
-            style="
-              padding:22px 20px;
-              background:#151b31;
-              border:1px solid #2a3358;
-              text-align:center;
-            "
-          >
-            <div style="font-size:12px; line-height:18px; letter-spacing:0.16em; text-transform:uppercase; color:#a8b1d8; margin-bottom:12px;">
-              Verification code
-            </div>
-            <div style="font-size:34px; line-height:40px; font-weight:800; letter-spacing:0.28em; color:#ffffff;">
-              ${this.escapeHtml(code)}
-            </div>
-          </td>
-        </tr>
-      </table>
+      <div
+        style="
+          padding:18px;
+          border-radius:14px;
+          background:#22283a;
+          border:1px solid #343d56;
+          text-align:center;
+        "
+      >
+        <div style="font-size:11px;line-height:16px;letter-spacing:0.18em;text-transform:uppercase;color:#98a3c4;margin-bottom:12px;">
+          Verification code
+        </div>
+        <div style="font-size:34px;line-height:38px;font-weight:800;letter-spacing:0.28em;color:#ffffff;">
+          ${this.escapeHtml(code)}
+        </div>
+      </div>
     `;
   }
 
-  private textStyle(tone: "main" | "muted") {
-    if (tone === "main") {
-      return "font-size:16px; line-height:28px; color:#374151;";
+  private textStyle(tone: "body-main" | "body-muted") {
+    if (tone === "body-main") {
+      return "font-size:16px;line-height:28px;color:#dde5f7;";
     }
 
-    return "font-size:13px; line-height:22px; color:#6b7280;";
+    return "font-size:14px;line-height:24px;color:#a9b4cf;";
   }
 
   private firstNameFromFullName(fullName?: string | null) {
     return fullName?.trim()?.split(/\s+/)?.[0] || "there";
+  }
+
+  private assetUrl(path: string) {
+    const base = this.webUrl.replace(/\/+$/, "");
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    return `${base}${cleanPath}`;
   }
 
   private async send(input: {
