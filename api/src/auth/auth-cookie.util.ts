@@ -14,48 +14,50 @@ function isProduction() {
 
 function resolveCookieDomain() {
   const domain = process.env.AUTH_COOKIE_DOMAIN?.trim();
+
+  // Never force a domain in local development.
+  if (!isProduction()) return undefined;
+
   return domain || undefined;
+}
+
+function baseCookieOptions() {
+  return {
+    secure: isProduction(),
+    sameSite: "lax" as const,
+    domain: resolveCookieDomain(),
+  };
 }
 
 export function setAccessCookie(res: Response, token: string) {
   res.cookie(ACCESS_COOKIE_NAME, token, {
+    ...baseCookieOptions(),
     httpOnly: true,
-    secure: isProduction(),
-    sameSite: "lax",
     path: "/",
     maxAge: ACCESS_MAX_AGE_MS,
-    domain: resolveCookieDomain(),
   });
 }
 
 export function setRefreshCookie(res: Response, token: string) {
   res.cookie(REFRESH_COOKIE_NAME, token, {
+    ...baseCookieOptions(),
     httpOnly: true,
-    secure: isProduction(),
-    sameSite: "lax",
     path: "/auth",
     maxAge: REFRESH_MAX_AGE_MS,
-    domain: resolveCookieDomain(),
   });
 }
 
 export function setCsrfCookie(res: Response, token: string) {
   res.cookie(CSRF_COOKIE_NAME, token, {
+    ...baseCookieOptions(),
     httpOnly: false,
-    secure: isProduction(),
-    sameSite: "lax",
     path: "/",
     maxAge: CSRF_MAX_AGE_MS,
-    domain: resolveCookieDomain(),
   });
 }
 
 export function clearAuthCookies(res: Response) {
-  const base = {
-    secure: isProduction(),
-    sameSite: "lax" as const,
-    domain: resolveCookieDomain(),
-  };
+  const base = baseCookieOptions();
 
   res.clearCookie(ACCESS_COOKIE_NAME, {
     ...base,
