@@ -28,11 +28,13 @@ import {
   setCsrfCookie,
   setRefreshCookie,
 } from "./auth-cookie.util";
+import { Public } from "./public.decorator";
 
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("register")
   async register(
@@ -50,10 +52,12 @@ export class AuthController {
       message: result.message,
       requiresEmailVerification: result.requiresEmailVerification,
       emailVerified: result.emailVerified,
+      phoneVerified: result.phoneVerified,
       user: result.user,
     };
   }
 
+  @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("login")
   async login(
@@ -75,6 +79,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("social/google")
   async googleSocialAuth(
@@ -97,6 +102,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("social/apple")
   async appleSocialAuth(
@@ -119,7 +125,9 @@ export class AuthController {
     };
   }
 
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Public()
+  @UseGuards(CsrfGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post("refresh")
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: Response) {
     const refreshToken =
@@ -135,12 +143,14 @@ export class AuthController {
     return { ok: true };
   }
 
+  @Public()
   @Throttle({ default: { limit: 5, ttl: 10 * 60_000 } })
   @Post("verify-email")
   verifyEmail(@Body() dto: VerifyEmailDto, @Req() req: any) {
     return this.auth.verifyEmail(dto, req);
   }
 
+  @Public()
   @Throttle({ default: { limit: 3, ttl: 10 * 60_000 } })
   @Post("resend-verification-code")
   resendVerificationCode(
@@ -150,6 +160,7 @@ export class AuthController {
     return this.auth.resendVerificationCode(dto, req);
   }
 
+  @Public()
   @Throttle({ default: { limit: 3, ttl: 15 * 60_000 } })
   @Post("forgot-password")
   requestPasswordReset(
@@ -159,6 +170,7 @@ export class AuthController {
     return this.auth.requestPasswordReset(dto, req);
   }
 
+  @Public()
   @Throttle({ default: { limit: 5, ttl: 15 * 60_000 } })
   @Post("reset-password")
   resetPassword(@Body() dto: ResetPasswordDto, @Req() req: any) {
@@ -184,10 +196,9 @@ export class AuthController {
     return {
       ...user,
       context: {
-        schoolId: req.user.schoolId ?? null,
-        programId: req.user.programId ?? null,
-        role: req.user.role ?? null,
+        institutionId: req.user.institutionId ?? null,
         membershipId: req.user.membershipId ?? null,
+        membershipType: req.user.membershipType ?? null,
       },
     };
   }

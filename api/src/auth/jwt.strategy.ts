@@ -1,29 +1,27 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
-import { ExtractJwt, Strategy } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
-import { MembershipType } from "@prisma/client";
-import { ACCESS_COOKIE_NAME } from "./auth-cookie.util";
+import { ExtractJwt, Strategy } from "passport-jwt";
 
-interface JwtPayload {
+import { ACCESS_COOKIE_NAME, readCookieFromHeader } from "./auth-cookie.util";
+
+export type AuthenticatedRequestUser = {
+  userId: string;
+  membershipId: string | null;
+  institutionId: string | null;
+  membershipType: string | null;
+  sessionId: string | null;
+  type: string;
+};
+
+type JwtPayload = {
   sub: string;
-  schoolId?: string | null;
-  programId?: string | null;
-  role?: MembershipType | null;
   membershipId?: string | null;
+  institutionId?: string | null;
+  membershipType?: string | null;
+  sid?: string | null;
   type?: string;
-}
-
-function extractCookieValue(cookieHeader: string | undefined, name: string) {
-  if (!cookieHeader) return null;
-
-  const cookies = cookieHeader.split(";").map((part) => part.trim());
-  const target = cookies.find((item) => item.startsWith(`${name}=`));
-
-  if (!target) return null;
-
-  return decodeURIComponent(target.slice(name.length + 1));
-}
+};
 
 const accessCookieExtractor = (req: any) => {
   if (!req) return null;
@@ -32,7 +30,7 @@ const accessCookieExtractor = (req: any) => {
     return req.cookies[ACCESS_COOKIE_NAME];
   }
 
-  return extractCookieValue(req.headers?.cookie, ACCESS_COOKIE_NAME);
+  return readCookieFromHeader(req.headers?.cookie, ACCESS_COOKIE_NAME);
 };
 
 @Injectable()
@@ -48,13 +46,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload): Promise<AuthenticatedRequestUser> {
+    if (!payload?.sub) {
+      throw new UnauthorizedException("Invalid access token");
+    }
+
+    if (payload.type && payload.type !== "access") {
+      throw new UnauthorizedException("Invalid token type");
+    }
+
     return {
       userId: payload.sub,
-      schoolId: payload.schoolId ?? null,
-      programId: payload.programId ?? null,
-      role: payload.role ?? null,
       membershipId: payload.membershipId ?? null,
+      institutionId: payload.institutionId ?? null,
+      membershipType: payload.membershipType ?? null,
+      sessionId: payload.sid ?? null,
+      type: payload.type ?? "access",
     };
   }
 }

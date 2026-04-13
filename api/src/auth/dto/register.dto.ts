@@ -1,3 +1,4 @@
+import { Transform } from "class-transformer";
 import {
   IsEmail,
   IsNotEmpty,
@@ -8,17 +9,25 @@ import {
 } from "class-validator";
 
 export class RegisterDto {
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.replace(/\s+/g, " ").trim() : value
+  )
   @IsString()
   @IsNotEmpty()
   @MinLength(2)
-  @MaxLength(100)
-  fullName: string;
+  @MaxLength(120)
+  fullName!: string;
 
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value
+  )
   @IsEmail()
-  email: string;
+  @MaxLength(254)
+  email!: string;
 
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   @Matches(/[A-Z]/, {
     message: "password must contain at least one uppercase letter",
   })
@@ -31,5 +40,5 @@ export class RegisterDto {
   @Matches(/[^A-Za-z0-9]/, {
     message: "password must contain at least one special character",
   })
-  password: string;
+  password!: string;
 }

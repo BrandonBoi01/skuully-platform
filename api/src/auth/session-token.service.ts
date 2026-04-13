@@ -1,14 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
 import { createHash, randomBytes } from "crypto";
+import type { StringValue } from "ms";
+
 import { PrismaService } from "../prisma/prisma.service";
 
 type SessionContext = {
   userId: string;
-  schoolId?: string | null;
-  programId?: string | null;
-  role?: string | null;
+  institutionId?: string | null;
   membershipId?: string | null;
+  membershipType?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
@@ -17,16 +19,16 @@ type SessionContext = {
 export class SessionTokenService {
   constructor(
     private readonly jwt: JwtService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService
   ) {}
 
   async issueSession(input: SessionContext) {
     const accessToken = await this.signAccessToken({
       userId: input.userId,
-      schoolId: input.schoolId ?? null,
-      programId: input.programId ?? null,
-      role: input.role ?? null,
+      institutionId: input.institutionId ?? null,
       membershipId: input.membershipId ?? null,
+      membershipType: input.membershipType ?? null,
     });
 
     const refreshToken = randomBytes(48).toString("hex");
@@ -44,10 +46,6 @@ export class SessionTokenService {
         expiresAt,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
-        schoolId: input.schoolId ?? null,
-        programId: input.programId ?? null,
-        role: input.role ?? null,
-        membershipId: input.membershipId ?? null,
         lastUsedAt: new Date(),
       },
       select: {
@@ -72,12 +70,11 @@ export class SessionTokenService {
 
     const existing = await this.prisma.refreshSession.findUnique({
       where: { tokenHash },
-      include: {
-        user: {
-          select: {
-            id: true,
-          },
-        },
+      select: {
+        id: true,
+        userId: true,
+        expiresAt: true,
+        revokedAt: true,
       },
     });
 
@@ -87,10 +84,9 @@ export class SessionTokenService {
 
     const accessToken = await this.signAccessToken({
       userId: existing.userId,
-      schoolId: existing.schoolId ?? null,
-      programId: existing.programId ?? null,
-      role: existing.role ?? null,
-      membershipId: existing.membershipId ?? null,
+      institutionId: null,
+      membershipId: null,
+      membershipType: null,
     });
 
     const newRefreshToken = randomBytes(48).toString("hex");
@@ -107,10 +103,6 @@ export class SessionTokenService {
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
-        schoolId: existing.schoolId ?? null,
-        programId: existing.programId ?? null,
-        role: existing.role ?? null,
-        membershipId: existing.membershipId ?? null,
         lastUsedAt: new Date(),
       },
       select: {
@@ -129,10 +121,9 @@ export class SessionTokenService {
 
     return {
       userId: existing.userId,
-      schoolId: existing.schoolId ?? null,
-      programId: existing.programId ?? null,
-      role: existing.role ?? null,
-      membershipId: existing.membershipId ?? null,
+      institutionId: null,
+      membershipId: null,
+      membershipType: null,
       accessToken,
       refreshToken: newRefreshToken,
       csrfToken: newCsrfToken,
@@ -166,7 +157,10 @@ export class SessionTokenService {
     });
   }
 
-  async revokeAllOtherUserRefreshSessions(userId: string, currentSessionId?: string | null) {
+  async revokeAllOtherUserRefreshSessions(
+    userId: string,
+    currentSessionId?: string | null
+  ) {
     await this.prisma.refreshSession.updateMany({
       where: {
         userId,
@@ -179,30 +173,6 @@ export class SessionTokenService {
     });
   }
 
-  async updateSessionContext(input: {
-    refreshToken: string;
-    schoolId?: string | null;
-    programId?: string | null;
-    role?: string | null;
-    membershipId?: string | null;
-  }) {
-    const tokenHash = this.hash(input.refreshToken);
-
-    await this.prisma.refreshSession.updateMany({
-      where: {
-        tokenHash,
-        revokedAt: null,
-      },
-      data: {
-        schoolId: input.schoolId ?? null,
-        programId: input.programId ?? null,
-        role: input.role ?? null,
-        membershipId: input.membershipId ?? null,
-        lastUsedAt: new Date(),
-      },
-    });
-  }
-
   async listUserSessions(userId: string) {
     return this.prisma.refreshSession.findMany({
       where: { userId },
@@ -211,10 +181,6 @@ export class SessionTokenService {
         id: true,
         ipAddress: true,
         userAgent: true,
-        schoolId: true,
-        programId: true,
-        role: true,
-        membershipId: true,
         expiresAt: true,
         revokedAt: true,
         lastUsedAt: true,
@@ -230,22 +196,23 @@ export class SessionTokenService {
 
   private async signAccessToken(input: {
     userId: string;
-    schoolId?: string | null;
-    programId?: string | null;
-    role?: string | null;
+    institutionId?: string | null;
     membershipId?: string | null;
+    membershipType?: string | null;
   }) {
     return this.jwt.signAsync(
       {
         sub: input.userId,
-        schoolId: input.schoolId ?? null,
-        programId: input.programId ?? null,
-        role: input.role ?? null,
+        institutionId: input.institutionId ?? null,
         membershipId: input.membershipId ?? null,
+        membershipType: input.membershipType ?? null,
         type: "access",
       },
       {
-        expiresIn: "15m",
+        expiresIn: (this.config.get<string>("JWT_EXPIRES_IN") ||
+          "15m") as StringValue,
+        issuer: this.config.get<string>("JWT_ISSUER") || "skuully",
+        audience: this.config.get<string>("JWT_AUDIENCE") || "skuully-api",
       }
     );
   }

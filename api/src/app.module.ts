@@ -9,13 +9,15 @@ import { AppService } from "./app.service";
 import { PrismaModule } from "./prisma/prisma.module";
 import { UsersModule } from "./users/users.module";
 import { AuthModule } from "./auth/auth.module";
-import { SchoolsModule } from "./schools/schools.module";
-import { ProgramsModule } from "./programs/programs.module";
-import { StudentsModule } from "./students/students.module";
-import { AttendanceModule } from "./attendance/attendance.module";
-import { DashboardModule } from "./dashboard/dashboard.module";
 import { GeoModule } from "./geo/geo.module";
 import { OnboardingModule } from "./onboarding/onboarding.module";
+import { AccessControlModule } from "./access-control/access-control.module";
+import { InstitutionsModule } from "./institutions/institutions.module";
+import { ProgramsModule } from "./programs/programs.module";
+import { SubjectsModule } from "./subjects/subjects.module";
+import { StudentsModule } from "./students/students.module";
+import { EnrollmentsModule } from "./enrollments/enrollments.module";
+import { AcademicPeriodsModule } from "./academic-periods/academic-periods.module";
 
 @Module({
   imports: [
@@ -29,13 +31,15 @@ import { OnboardingModule } from "./onboarding/onboarding.module";
     PrismaModule,
     UsersModule,
     AuthModule,
-    SchoolsModule,
-    ProgramsModule,
-    StudentsModule,
-    AttendanceModule,
-    DashboardModule,
     GeoModule,
     OnboardingModule,
+    AccessControlModule,
+    InstitutionsModule,
+    ProgramsModule,
+    SubjectsModule,
+    StudentsModule,
+    EnrollmentsModule,
+    AcademicPeriodsModule,
   ],
   controllers: [AppController],
   providers: [

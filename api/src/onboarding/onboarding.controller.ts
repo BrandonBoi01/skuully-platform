@@ -1,110 +1,42 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Body, Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
 import { OnboardingService } from "./onboarding.service";
-import { SetOnboardingRouteDto } from "./dto/set-onboarding-route.dto";
-import { SaveBuildIdentityDto } from "./dto/save-build-identity.dto";
-import { SaveBuildAcademicDto } from "./dto/save-build-academic.dto";
-import { SaveBuildDetailsDto } from "./dto/save-build-details.dto";
-import { SendPhoneCodeDto } from "./dto/send-phone-code.dto";
-import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
-import { SavePersonalIdentityDto } from "./dto/save-personal-identity.dto";
+import { StartOnboardingDto } from "./dto/start-onboarding.dto";
+import { SetProfileDto } from "./dto/set-profile.dto";
+import { CreateInstitutionOnboardingDto } from "./dto/create-institution-onboarding.dto";
+import { RequestJoinDto } from "./dto/request-join.dto";
 
+@UseGuards(JwtAuthGuard)
 @Controller("onboarding")
-@UseGuards(AuthGuard("jwt"))
 export class OnboardingController {
-  constructor(private readonly onboardingService: OnboardingService) {}
+  constructor(private readonly onboarding: OnboardingService) {}
 
   @Get("me")
-  getMyOnboarding(@Req() req: any) {
-    return this.onboardingService.getMyOnboarding(req.user.userId);
+  getStatus(@Req() req: any) {
+    return this.onboarding.getStatus(req.user.userId);
   }
 
-  @Post("route")
-  setRoute(@Req() req: any, @Body() dto: SetOnboardingRouteDto) {
-    return this.onboardingService.setRoute(req.user.userId, dto);
+  @Post("start")
+  start(@Req() req: any, @Body() dto: StartOnboardingDto) {
+    return this.onboarding.start(req.user.userId, dto);
   }
 
-  /* ---------------- BUILD INSTITUTION ---------------- */
-
-  @Post("build/identity")
-  saveBuildIdentity(@Req() req: any, @Body() dto: SaveBuildIdentityDto) {
-    return this.onboardingService.saveBuildIdentity(req.user.userId, dto);
+  @Post("profile")
+  setProfile(@Req() req: any, @Body() dto: SetProfileDto) {
+    return this.onboarding.setProfile(req.user.userId, dto);
   }
 
-  @Get("build/academic-options")
-  getAcademicOptions(
-    @Query("institutionType") institutionType: string,
-    @Query("countryCode") countryCode: string
-  ) {
-    return this.onboardingService.getAcademicOptions(
-      institutionType,
-      countryCode
-    );
-  }
-
-  @Post("build/academic")
-  saveBuildAcademic(@Req() req: any, @Body() dto: SaveBuildAcademicDto) {
-    return this.onboardingService.saveBuildAcademic(req.user.userId, dto);
-  }
-
-  @Get("build/detail-options")
-  getDetailOptions(@Query("institutionType") institutionType: string) {
-    return this.onboardingService.getDetailOptions(institutionType);
-  }
-
-  @Post("build/details")
-  saveBuildDetails(@Req() req: any, @Body() dto: SaveBuildDetailsDto) {
-    return this.onboardingService.saveBuildDetails(req.user.userId, dto);
-  }
-
-  @Get("build/review")
-  getBuildReview(@Req() req: any) {
-    return this.onboardingService.getBuildReview(req.user.userId);
-  }
-
-  @Post("build/complete")
-  completeBuildInstitution(@Req() req: any) {
-    return this.onboardingService.completeBuildInstitution(req.user.userId);
-  }
-
-  /* ---------------- PERSONAL ACCOUNT ---------------- */
-
-  @Post("personal/identity")
-  savePersonalIdentity(
+  @Post("institution")
+  createInstitution(
     @Req() req: any,
-    @Body() dto: SavePersonalIdentityDto
+    @Body() dto: CreateInstitutionOnboardingDto
   ) {
-    return this.onboardingService.savePersonalIdentity(req.user.userId, dto);
+    return this.onboarding.createInstitution(req.user.userId, dto);
   }
 
-  @Post("personal/complete")
-  completePersonalAccount(@Req() req: any) {
-    return this.onboardingService.completePersonalAccount(req.user.userId);
-  }
-
-  /* ---------------- SHARED SECURITY ---------------- */
-
-  @Post("security/send-phone-code")
-  sendPhoneCode(@Req() req: any, @Body() dto: SendPhoneCodeDto) {
-    return this.onboardingService.sendPhoneCode(req.user.userId, dto);
-  }
-
-  @Post("security/verify-phone-code")
-  verifyPhoneCode(@Req() req: any, @Body() dto: VerifyPhoneCodeDto) {
-    return this.onboardingService.verifyPhoneCode(req.user.userId, dto);
-  }
-
-  @Post("security/skip")
-  skipPhone(@Req() req: any) {
-    return this.onboardingService.skipPhone(req.user.userId);
+  @Post("join")
+  requestJoin(@Req() req: any, @Body() dto: RequestJoinDto) {
+    return this.onboarding.requestJoin(req.user.userId, dto);
   }
 }

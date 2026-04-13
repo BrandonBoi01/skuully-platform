@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import type { StringValue } from "ms";
+
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./jwt.strategy";
@@ -22,7 +24,10 @@ import { CsrfGuard } from "./csrf.guard";
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>("JWT_SECRET"),
         signOptions: {
-          expiresIn: (config.get<string>("JWT_EXPIRES_IN") || "15m") as any,
+          expiresIn: (config.get<string>("JWT_EXPIRES_IN") ||
+            "15m") as StringValue,
+          issuer: config.get<string>("JWT_ISSUER") || "skuully",
+          audience: config.get<string>("JWT_AUDIENCE") || "skuully-api",
         },
       }),
     }),

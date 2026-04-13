@@ -1,6 +1,11 @@
-import { IsEmail } from "class-validator";
+import { Transform } from "class-transformer";
+import { IsEmail, MaxLength } from "class-validator";
 
 export class ResendVerificationCodeDto {
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value
+  )
   @IsEmail()
-  email: string;
+  @MaxLength(254)
+  email!: string;
 }

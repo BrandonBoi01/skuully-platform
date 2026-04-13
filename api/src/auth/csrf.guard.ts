@@ -4,7 +4,8 @@ import {
   ForbiddenException,
   Injectable,
 } from "@nestjs/common";
-import { CSRF_COOKIE_NAME } from "./auth-cookie.util";
+
+import { CSRF_COOKIE_NAME, readCookieFromHeader } from "./auth-cookie.util";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -18,9 +19,10 @@ export class CsrfGuard implements CanActivate {
     }
 
     const csrfCookie =
-      req.cookies?.[CSRF_COOKIE_NAME] ?? this.readCookie(req.headers?.cookie);
+      req.cookies?.[CSRF_COOKIE_NAME] ??
+      readCookieFromHeader(req.headers?.cookie, CSRF_COOKIE_NAME);
 
-    const csrfHeader = req.headers["x-csrf-token"];
+    const csrfHeader = this.normalizeHeader(req.headers?.["x-csrf-token"]);
 
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
       throw new ForbiddenException("Invalid CSRF token");
@@ -29,15 +31,9 @@ export class CsrfGuard implements CanActivate {
     return true;
   }
 
-  private readCookie(cookieHeader?: string) {
-    if (!cookieHeader) return null;
-
-    const parts = cookieHeader.split(";").map((item: string) => item.trim());
-    const found = parts.find((item: string) =>
-      item.startsWith(`${CSRF_COOKIE_NAME}=`)
-    );
-
-    if (!found) return null;
-    return decodeURIComponent(found.slice(CSRF_COOKIE_NAME.length + 1));
+  private normalizeHeader(value: unknown) {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+    return null;
   }
 }

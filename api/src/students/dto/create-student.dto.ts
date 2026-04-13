@@ -1,27 +1,56 @@
-import { IsObject, IsOptional, IsString } from "class-validator";
+import { StudentStatus } from "@prisma/client";
+import {
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class CreateStudentDto {
   @IsString()
-  fullName!: string;
+  @MinLength(2)
+  @MaxLength(150)
+  fullName: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   admissionNo?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
   gender?: string;
 
   @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsOptional()
   @IsString()
-  dob?: string; // ISO string (we'll parse)
+  @Length(2, 2)
+  nationalityCode?: string;
+
+  @IsOptional()
+  @IsEnum(StudentStatus)
+  status?: StudentStatus;
+
+  @IsOptional()
+  @IsDateString()
+  joinedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  programId?: string;
 
   @IsOptional()
   @IsString()
   classId?: string;
 
-  // dynamic fields by key e.g. { nemisNumber: "123" }
   @IsOptional()
-  @IsObject()
-  fields?: Record<string, string>;
+  @IsString()
+  userId?: string;
 }

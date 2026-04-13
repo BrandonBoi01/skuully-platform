@@ -1,4 +1,4 @@
-import type { Response } from "express";
+import type { CookieOptions, Response } from "express";
 
 export const ACCESS_COOKIE_NAME = "skuully_access_token";
 export const REFRESH_COOKIE_NAME = "skuully_refresh_token";
@@ -15,16 +15,14 @@ function isProduction() {
 function resolveCookieDomain() {
   const domain = process.env.AUTH_COOKIE_DOMAIN?.trim();
 
-  // Never force a domain in local development.
   if (!isProduction()) return undefined;
-
   return domain || undefined;
 }
 
-function baseCookieOptions() {
+function baseCookieOptions(): CookieOptions {
   return {
     secure: isProduction(),
-    sameSite: "lax" as const,
+    sameSite: "lax",
     domain: resolveCookieDomain(),
   };
 }
@@ -76,4 +74,18 @@ export function clearAuthCookies(res: Response) {
     httpOnly: false,
     path: "/",
   });
+}
+
+export function readCookieFromHeader(
+  cookieHeader: string | undefined,
+  name: string
+) {
+  if (!cookieHeader) return null;
+
+  const parts = cookieHeader.split(";").map((item) => item.trim());
+  const found = parts.find((item) => item.startsWith(`${name}=`));
+
+  if (!found) return null;
+
+  return decodeURIComponent(found.slice(name.length + 1));
 }

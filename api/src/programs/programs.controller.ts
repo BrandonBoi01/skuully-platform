@@ -3,99 +3,173 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
-  Req,
-  Res,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
-import { MembershipType } from "@prisma/client";
-
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { ProgramContextGuard } from "../auth/program-context.guard";
-import { Roles } from "../auth/roles.decorator";
-import { RolesGuard } from "../auth/roles.guard";
-import { SchoolContextGuard } from "../auth/school-context.guard";
-import { setAccessCookie } from "../auth/auth-cookie.util";
-import { CreateProgramDto } from "./dto/create-program.dto";
+import { PermissionsGuard } from "../access-control/permissions.guard";
+import { RequirePermissions } from "../access-control/permissions.decorator";
+import { PERMISSIONS } from "../access-control/permissions.constants";
 import { ProgramsService } from "./programs.service";
+import { CreateProgramDto } from "./dto/create-program.dto";
+import { UpdateProgramDto } from "./dto/update-program.dto";
+import { ListProgramsQueryDto } from "./dto/list-programs-query.dto";
+import { CreateClassRoomDto } from "./dto/create-class-room.dto";
+import { UpdateClassRoomDto } from "./dto/update-class-room.dto";
+import { ListClassRoomsQueryDto } from "./dto/list-class-rooms-query.dto";
+import { CreateProgramGradeDto } from "./dto/create-program-grade.dto";
+import { UpdateProgramGradeDto } from "./dto/update-program-grade.dto";
 
-@UseGuards(JwtAuthGuard)
-@Controller()
+@Controller("institutions/:institutionId/programs")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ProgramsController {
-  constructor(private readonly programs: ProgramsService) {}
+  constructor(private readonly programsService: ProgramsService) {}
 
-  @Get("curriculums/templates")
-  listTemplates() {
-    return this.programs.listTemplates();
-  }
+  // ================= PROGRAMS =================
 
-  @UseGuards(SchoolContextGuard)
-  @Get("schools/programs")
-  listPrograms(@Req() req: any) {
-    return this.programs.listPrograms(req.user.schoolId);
-  }
-
-  @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
-  @Post("schools/programs")
-  createProgram(@Req() req: any, @Body() dto: CreateProgramDto) {
-    return this.programs.createProgram(req.user.schoolId, dto);
-  }
-
-  @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
-  @Post("schools/programs/:programId/seed")
-  seedProgram(@Req() req: any, @Param("programId") programId: string) {
-    return this.programs.seedProgram(req.user.schoolId, programId);
-  }
-
-  @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(MembershipType.OWNER, MembershipType.ADMIN)
-  @Post("schools/programs/:programId/generate-classes")
-  generateClasses(@Req() req: any, @Param("programId") programId: string) {
-    return this.programs.generateClasses(req.user.schoolId, programId);
-  }
-
-  @UseGuards(SchoolContextGuard)
-  @Get("schools/programs/:programId")
-  getProgram(@Req() req: any, @Param("programId") programId: string) {
-    return this.programs.getProgram(req.user.schoolId, programId);
-  }
-
-  @UseGuards(SchoolContextGuard, RolesGuard)
-  @Roles(MembershipType.OWNER, MembershipType.ADMIN, MembershipType.STAFF)
-  @Post("programs/switch/:programId")
-  async switchProgram(
-    @Req() req: any,
-    @Param("programId") programId: string,
-    @Res({ passthrough: true }) res: Response
+  @Get()
+  @RequirePermissions(PERMISSIONS.PROGRAM_VIEW)
+  listPrograms(
+    @Param("institutionId") institutionId: string,
+    @Query() query: ListProgramsQueryDto
   ) {
-    const result = await this.programs.switchProgram(
-      req.user.userId,
-      req.user.schoolId,
-      req.user.role,
-      programId
-    );
-
-    setAccessCookie(res, result.token);
-    return result;
+    return this.programsService.listPrograms(institutionId, query);
   }
 
-  @UseGuards(ProgramContextGuard)
-  @Get("programs/active")
-  activeProgram(@Req() req: any) {
-    return this.programs.activeProgramContext(
-      req.user.userId,
-      req.user.schoolId,
-      req.user.role,
-      req.user.programId
+  @Get(":programId")
+  @RequirePermissions(PERMISSIONS.PROGRAM_VIEW)
+  getProgram(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string
+  ) {
+    return this.programsService.getProgramById(institutionId, programId);
+  }
+
+  @Post()
+  @RequirePermissions(PERMISSIONS.PROGRAM_CREATE)
+  createProgram(
+    @Param("institutionId") institutionId: string,
+    @Body() dto: CreateProgramDto
+  ) {
+    return this.programsService.createProgram(institutionId, dto);
+  }
+
+  @Patch(":programId")
+  @RequirePermissions(PERMISSIONS.PROGRAM_UPDATE)
+  updateProgram(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Body() dto: UpdateProgramDto
+  ) {
+    return this.programsService.updateProgram(institutionId, programId, dto);
+  }
+
+  // ================= CLASSES =================
+
+  @Get(":programId/classes")
+  @RequirePermissions(PERMISSIONS.CLASS_VIEW)
+  listClassRooms(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Query() query: ListClassRoomsQueryDto
+  ) {
+    return this.programsService.listClassRooms(institutionId, programId, query);
+  }
+
+  @Get(":programId/classes/:classRoomId")
+  @RequirePermissions(PERMISSIONS.CLASS_VIEW)
+  getClassRoom(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Param("classRoomId") classRoomId: string
+  ) {
+    return this.programsService.getClassRoomById(
+      institutionId,
+      programId,
+      classRoomId
     );
   }
 
-  @UseGuards(ProgramContextGuard)
-  @Get("programs/classes")
-  listProgramClasses(@Req() req: any) {
-    return this.programs.listProgramClasses(req.user.programId);
+  @Post(":programId/classes")
+  @RequirePermissions(PERMISSIONS.CLASS_CREATE)
+  createClassRoom(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Body() dto: CreateClassRoomDto
+  ) {
+    return this.programsService.createClassRoom(institutionId, programId, dto);
+  }
+
+  @Patch(":programId/classes/:classRoomId")
+  @RequirePermissions(PERMISSIONS.CLASS_UPDATE)
+  updateClassRoom(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Param("classRoomId") classRoomId: string,
+    @Body() dto: UpdateClassRoomDto
+  ) {
+    return this.programsService.updateClassRoom(
+      institutionId,
+      programId,
+      classRoomId,
+      dto
+    );
+  }
+
+  // ================= GRADES =================
+
+  @Get(":programId/grades")
+  @RequirePermissions(PERMISSIONS.GRADE_VIEW)
+  listProgramGrades(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string
+  ) {
+    return this.programsService.listProgramGrades(institutionId, programId);
+  }
+
+  @Get(":programId/grades/:gradeId")
+  @RequirePermissions(PERMISSIONS.GRADE_VIEW)
+  getProgramGrade(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Param("gradeId") gradeId: string
+  ) {
+    return this.programsService.getProgramGradeById(
+      institutionId,
+      programId,
+      gradeId
+    );
+  }
+
+  @Post(":programId/grades")
+  @RequirePermissions(PERMISSIONS.GRADE_CREATE)
+  createProgramGrade(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Body() dto: CreateProgramGradeDto
+  ) {
+    return this.programsService.createProgramGrade(
+      institutionId,
+      programId,
+      dto
+    );
+  }
+
+  @Patch(":programId/grades/:gradeId")
+  @RequirePermissions(PERMISSIONS.GRADE_UPDATE)
+  updateProgramGrade(
+    @Param("institutionId") institutionId: string,
+    @Param("programId") programId: string,
+    @Param("gradeId") gradeId: string,
+    @Body() dto: UpdateProgramGradeDto
+  ) {
+    return this.programsService.updateProgramGrade(
+      institutionId,
+      programId,
+      gradeId,
+      dto
+    );
   }
 }

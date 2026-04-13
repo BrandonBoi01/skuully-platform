@@ -1,218 +1,92 @@
 import {
   BadRequestException,
-  ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { MembershipType, Prisma } from "@prisma/client";
+import { Prisma, ProgramStatus } from "@prisma/client";
+
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProgramDto } from "./dto/create-program.dto";
+import { UpdateProgramDto } from "./dto/update-program.dto";
+import { ListProgramsQueryDto } from "./dto/list-programs-query.dto";
+import { CreateClassRoomDto } from "./dto/create-class-room.dto";
+import { UpdateClassRoomDto } from "./dto/update-class-room.dto";
+import { ListClassRoomsQueryDto } from "./dto/list-class-rooms-query.dto";
+import { CreateProgramGradeDto } from "./dto/create-program-grade.dto";
+import { UpdateProgramGradeDto } from "./dto/update-program-grade.dto";
 
 @Injectable()
 export class ProgramsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async listTemplates() {
-    return this.prisma.curriculumTemplate.findMany({
-      orderBy: [{ name: "asc" }],
+  async listPrograms(institutionId: string, query: ListProgramsQueryDto) {
+    await this.assertInstitutionExists(institutionId);
+
+    const search = query.search?.trim();
+    const status = query.status;
+
+    const where: Prisma.ProgramWhereInput = {
+      institutionId,
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                code: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    return this.prisma.program.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
       select: {
         id: true,
+        institutionId: true,
+        templateId: true,
         name: true,
         code: true,
-        description: true,
-      },
-    });
-  }
-
-  async listPrograms(schoolId: string) {
-    return this.prisma.schoolProgram.findMany({
-      where: { schoolId },
-      orderBy: [{ createdAt: "desc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
         status: true,
-        template: {
-          select: {
-            code: true,
-            name: true,
-          },
-        },
         createdAt: true,
         updatedAt: true,
-      },
-    });
-  }
-
-  async createProgram(schoolId: string, dto: CreateProgramDto) {
-    const templateCode = dto.templateCode?.trim().toUpperCase();
-    const programName = dto.name?.trim();
-
-    if (!templateCode) {
-      throw new BadRequestException("templateCode is required");
-    }
-
-    if (!programName) {
-      throw new BadRequestException("name is required");
-    }
-
-    const template = await this.prisma.curriculumTemplate.findUnique({
-      where: { code: templateCode },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-      },
-    });
-
-    if (!template) {
-      throw new NotFoundException("Template not found");
-    }
-
-    try {
-      const program = await this.prisma.schoolProgram.create({
-        data: {
-          schoolId,
-          templateId: template.id,
-          name: programName,
-        },
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          createdAt: true,
-          template: {
-            select: {
-              code: true,
-              name: true,
-            },
-          },
-        },
-      });
-
-      return {
-        message: "Program created",
-        program,
-      };
-    } catch (e: unknown) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === "P2002"
-      ) {
-        throw new ConflictException(
-          "Program name already exists in this school"
-        );
-      }
-      throw e;
-    }
-  }
-
-  private async ensureGenericTemplateHasDefaults(
-    templateId: string,
-    templateCode: string
-  ) {
-    if (templateCode !== "GENERIC") {
-      return;
-    }
-
-    const existingTemplate = await this.prisma.curriculumTemplate.findUnique({
-      where: { id: templateId },
-      include: {
-        grades: {
-          include: {
+        _count: {
+          select: {
+            classes: true,
+            grades: true,
             subjects: true,
+            students: true,
           },
         },
-        subjects: true,
       },
-    });
-
-    if (!existingTemplate) {
-      throw new NotFoundException("Template not found");
-    }
-
-    const hasGrades = existingTemplate.grades.length > 0;
-    const hasSubjects = existingTemplate.subjects.length > 0;
-
-    if (hasGrades && hasSubjects) {
-      return;
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      let templateSubjects = existingTemplate.subjects;
-
-      if (!hasSubjects) {
-        const defaultSubjects = [
-          { name: "English", code: "ENG", isCore: true },
-          { name: "Mathematics", code: "MATH", isCore: true },
-          { name: "Science", code: "SCI", isCore: true },
-          { name: "Kiswahili", code: "KIS", isCore: true },
-          { name: "Social Studies", code: "SST", isCore: true },
-        ];
-
-        for (const subject of defaultSubjects) {
-          await tx.curriculumTemplateSubject.create({
-            data: {
-              templateId,
-              name: subject.name,
-              code: subject.code,
-              isCore: subject.isCore,
-            },
-          });
-        }
-
-        templateSubjects = await tx.curriculumTemplateSubject.findMany({
-          where: { templateId },
-          orderBy: { name: "asc" },
-        });
-      }
-
-      if (!hasGrades) {
-        const defaultGrades = [
-          { name: "Grade 1", order: 1, stage: "Primary" },
-          { name: "Grade 2", order: 2, stage: "Primary" },
-          { name: "Grade 3", order: 3, stage: "Primary" },
-          { name: "Grade 4", order: 4, stage: "Primary" },
-          { name: "Grade 5", order: 5, stage: "Primary" },
-          { name: "Grade 6", order: 6, stage: "Primary" },
-          { name: "Grade 7", order: 7, stage: "Primary" },
-          { name: "Grade 8", order: 8, stage: "Primary" },
-        ];
-
-        for (const grade of defaultGrades) {
-          const createdGrade = await tx.curriculumTemplateGrade.create({
-            data: {
-              templateId,
-              name: grade.name,
-              order: grade.order,
-              stage: grade.stage,
-            },
-          });
-
-          for (const subject of templateSubjects) {
-            await tx.curriculumTemplateGradeSubject.create({
-              data: {
-                gradeId: createdGrade.id,
-                subjectId: subject.id,
-              },
-            });
-          }
-        }
-      }
     });
   }
 
-  async seedProgram(schoolId: string, programId: string) {
-    const baseProgram = await this.prisma.schoolProgram.findFirst({
-      where: { id: programId, schoolId },
+  async getProgramById(institutionId: string, programId: string) {
+    const program = await this.prisma.program.findFirst({
+      where: {
+        id: programId,
+        institutionId,
+      },
       select: {
         id: true,
+        institutionId: true,
         templateId: true,
+        name: true,
+        code: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         template: {
           select: {
             id: true,
@@ -220,179 +94,66 @@ export class ProgramsService {
             name: true,
           },
         },
-      },
-    });
-
-    if (!baseProgram) {
-      throw new NotFoundException("Program not found");
-    }
-
-    await this.ensureGenericTemplateHasDefaults(
-      baseProgram.templateId,
-      baseProgram.template.code
-    );
-
-    const program = await this.prisma.schoolProgram.findFirst({
-      where: { id: programId, schoolId },
-      include: {
-        template: {
-          include: {
-            grades: {
-              orderBy: { order: "asc" },
-              include: {
-                subjects: true,
-              },
-            },
-            subjects: {
-              orderBy: { name: "asc" },
-            },
-          },
-        },
-      },
-    });
-
-    if (!program) {
-      throw new NotFoundException("Program not found");
-    }
-
-    const alreadySeeded = await this.prisma.programGrade.findFirst({
-      where: { programId },
-      select: { id: true },
-    });
-
-    if (alreadySeeded) {
-      throw new BadRequestException("Program already seeded");
-    }
-
-    if (program.template.grades.length === 0) {
-      throw new BadRequestException(
-        "Template has no grades. Add template grades before seeding."
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      const gradeMap = new Map<string, string>();
-      const subjectMap = new Map<string, string>();
-
-      for (const subject of program.template.subjects) {
-        const created = await tx.programSubject.create({
-          data: {
-            programId,
-            templateSubjectId: subject.id,
-            name: subject.name,
-            code: subject.code,
-            isCore: subject.isCore,
-          },
-          select: { id: true },
-        });
-
-        subjectMap.set(subject.id, created.id);
-      }
-
-      for (const grade of program.template.grades) {
-        const created = await tx.programGrade.create({
-          data: {
-            programId,
-            templateGradeId: grade.id,
-            name: grade.name,
-            order: grade.order,
-            stage: grade.stage,
-          },
-          select: { id: true },
-        });
-
-        gradeMap.set(grade.id, created.id);
-      }
-
-      for (const grade of program.template.grades) {
-        const programGradeId = gradeMap.get(grade.id);
-        if (!programGradeId) continue;
-
-        for (const link of grade.subjects) {
-          const programSubjectId = subjectMap.get(link.subjectId);
-          if (!programSubjectId) continue;
-
-          await tx.programGradeSubject.create({
-            data: {
-              gradeId: programGradeId,
-              subjectId: programSubjectId,
-            },
-          });
-        }
-      }
-    });
-
-    return { message: "Program seeded successfully" };
-  }
-
-  async generateClasses(schoolId: string, programId: string) {
-    const program = await this.prisma.schoolProgram.findFirst({
-      where: { id: programId, schoolId },
-      include: {
         grades: {
-          orderBy: { order: "asc" },
-        },
-      },
-    });
-
-    if (!program) {
-      throw new NotFoundException("Program not found");
-    }
-
-    if (program.grades.length === 0) {
-      throw new BadRequestException(
-        "Program has no grades yet. Seed the program first."
-      );
-    }
-
-    const existingClass = await this.prisma.programClass.findFirst({
-      where: { programId },
-      select: { id: true },
-    });
-
-    if (existingClass) {
-      throw new BadRequestException("Classes already exist for this program");
-    }
-
-    const data = program.grades.map((grade) => ({
-      programId,
-      gradeId: grade.id,
-      name: grade.name,
-    }));
-
-    await this.prisma.programClass.createMany({ data });
-
-    return {
-      message: "Classes generated",
-      count: data.length,
-    };
-  }
-
-  async getProgram(schoolId: string, programId: string) {
-    const program = await this.prisma.schoolProgram.findFirst({
-      where: { id: programId, schoolId },
-      include: {
-        template: {
+          orderBy: [{ order: "asc" }],
           select: {
-            code: true,
+            id: true,
+            programId: true,
+            templateGradeId: true,
             name: true,
-          },
-        },
-        grades: {
-          orderBy: { order: "asc" },
-          include: {
-            classes: {
-              orderBy: { name: "asc" },
-            },
-            subjects: {
-              include: {
-                subject: true,
+            order: true,
+            stage: true,
+            _count: {
+              select: {
+                classes: true,
+                subjects: true,
               },
             },
           },
         },
         subjects: {
-          orderBy: { name: "asc" },
+          orderBy: [{ name: "asc" }],
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isCore: true,
+          },
+        },
+        classes: {
+          orderBy: [{ name: "asc" }],
+          select: {
+            id: true,
+            institutionId: true,
+            programId: true,
+            gradeId: true,
+            name: true,
+            code: true,
+            capacity: true,
+            createdAt: true,
+            updatedAt: true,
+            grade: {
+              select: {
+                id: true,
+                name: true,
+                order: true,
+                stage: true,
+              },
+            },
+            _count: {
+              select: {
+                students: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            classes: true,
+            grades: true,
+            subjects: true,
+            students: true,
+          },
         },
       },
     });
@@ -404,179 +165,210 @@ export class ProgramsService {
     return program;
   }
 
-  async switchProgram(
-    userId: string,
-    schoolId: string,
-    role: MembershipType | string,
-    programId: string
-  ) {
-    const normalizedRole = role as MembershipType;
+  async createProgram(institutionId: string, dto: CreateProgramDto) {
+    await this.assertInstitutionExists(institutionId);
 
-    const allowedRoles: MembershipType[] = [
-      MembershipType.OWNER,
-      MembershipType.ADMIN,
-      MembershipType.STAFF,
-    ];
+    const name = this.normalizeRequiredText(dto.name, "Program name");
+    const code = this.normalizeOptionalCode(dto.code);
+    const templateId = dto.templateId?.trim() || null;
 
-    if (!allowedRoles.includes(normalizedRole)) {
-      throw new ForbiddenException("You are not allowed to switch programs");
+    if (templateId) {
+      await this.assertCurriculumTemplateExists(templateId);
     }
 
-    const membership = await this.prisma.schoolMembership.findFirst({
+    const duplicateByName = await this.prisma.program.findFirst({
       where: {
-        userId,
-        schoolId,
-        status: "ACTIVE",
+        institutionId,
+        name: {
+          equals: name,
+          mode: "insensitive",
+        },
       },
-      select: {
-        id: true,
-        membershipType: true,
-      },
+      select: { id: true },
     });
 
-    if (!membership) {
-      throw new ForbiddenException(
-        "You are not an active member of this school"
-      );
+    if (duplicateByName) {
+      throw new BadRequestException("Program name already exists");
     }
 
-    const program = await this.prisma.schoolProgram.findFirst({
-      where: {
-        id: programId,
-        schoolId,
-        status: "ACTIVE",
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-      },
-    });
-
-    if (!program) {
-      throw new ForbiddenException("Program not found in active school");
-    }
-
-    if (normalizedRole === MembershipType.STAFF) {
-      const staffProfile = await this.prisma.staff.findFirst({
+    if (code) {
+      const duplicateByCode = await this.prisma.program.findFirst({
         where: {
-          schoolId,
-          userId,
-          status: "ACTIVE",
-          OR: [{ programId: program.id }, { programId: null }],
-        },
-        select: {
-          id: true,
-          programId: true,
-        },
-      });
-
-      const createdSession = await this.prisma.attendanceSession.findFirst({
-        where: {
-          schoolId,
-          programId: program.id,
-          createdById: userId,
+          institutionId,
+          code,
         },
         select: { id: true },
       });
 
-      const markedStaffInProgram = staffProfile
-        ? await this.prisma.staffSessionMark.findFirst({
-            where: {
-              staffId: staffProfile.id,
-              session: {
-                schoolId,
-                programId: program.id,
-              },
-            },
-            select: { id: true },
-          })
-        : null;
-
-      const hasProgramAccess =
-        !!staffProfile || !!createdSession || !!markedStaffInProgram;
-
-      if (!hasProgramAccess) {
-        throw new ForbiddenException(
-          "You can only switch to programs you are assigned to."
-        );
+      if (duplicateByCode) {
+        throw new BadRequestException("Program code already exists");
       }
     }
 
-    const token = await this.jwt.signAsync({
-      sub: userId,
-      schoolId,
-      role: membership.membershipType,
-      membershipId: membership.id,
-      programId: program.id,
-    });
-
-    return {
-      token,
-      active: {
-        program: {
-          id: program.id,
-          name: program.name,
-        },
-        schoolId,
-        membershipType: membership.membershipType,
-        membershipId: membership.id,
-      },
-    };
-  }
-
-  async activeProgramContext(
-    userId: string,
-    schoolId?: string | null,
-    role?: MembershipType | string | null,
-    programId?: string | null
-  ) {
-    if (!schoolId || !programId) {
-      return {
-        active: null,
-        note: "No active program selected. Use POST /programs/switch/:programId",
-      };
-    }
-
-    const program = await this.prisma.schoolProgram.findFirst({
-      where: {
-        id: programId,
-        schoolId,
+    const program = await this.prisma.program.create({
+      data: {
+        institutionId,
+        name,
+        code,
+        templateId,
+        status: dto.status ?? ProgramStatus.ACTIVE,
       },
       select: {
         id: true,
+        institutionId: true,
+        templateId: true,
         name: true,
+        code: true,
         status: true,
-        schoolId: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
-    if (!program) {
+    return {
+      message: "Program created successfully",
+      program,
+    };
+  }
+
+  async updateProgram(
+    institutionId: string,
+    programId: string,
+    dto: UpdateProgramDto,
+  ) {
+    const existing = await this.prisma.program.findFirst({
+      where: {
+        id: programId,
+        institutionId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
       throw new NotFoundException("Program not found");
     }
 
-    return {
-      active: {
-        userId,
-        schoolId,
-        membershipType: role ?? null,
-        program: {
-          id: program.id,
-          name: program.name,
-          status: program.status,
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRequiredText(dto.name, "Program name")
+        : undefined;
+
+    const code =
+      dto.code !== undefined ? this.normalizeOptionalCode(dto.code) : undefined;
+
+    const templateId =
+      dto.templateId !== undefined ? dto.templateId?.trim() || null : undefined;
+
+    if (templateId) {
+      await this.assertCurriculumTemplateExists(templateId);
+    }
+
+    if (name) {
+      const duplicateByName = await this.prisma.program.findFirst({
+        where: {
+          institutionId,
+          id: { not: programId },
+          name: {
+            equals: name,
+            mode: "insensitive",
+          },
         },
+        select: { id: true },
+      });
+
+      if (duplicateByName) {
+        throw new BadRequestException("Program name already exists");
+      }
+    }
+
+    if (code) {
+      const duplicateByCode = await this.prisma.program.findFirst({
+        where: {
+          institutionId,
+          id: { not: programId },
+          code,
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByCode) {
+        throw new BadRequestException("Program code already exists");
+      }
+    }
+
+    const program = await this.prisma.program.update({
+      where: { id: programId },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(code !== undefined ? { code } : {}),
+        ...(templateId !== undefined ? { templateId } : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
+      select: {
+        id: true,
+        institutionId: true,
+        templateId: true,
+        name: true,
+        code: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      message: "Program updated successfully",
+      program,
     };
   }
 
-  async listProgramClasses(programId: string) {
-    return this.prisma.programClass.findMany({
-      where: { programId },
-      orderBy: [{ grade: { order: "asc" } }, { name: "asc" }],
+  async listClassRooms(
+    institutionId: string,
+    programId: string,
+    query: ListClassRoomsQueryDto,
+  ) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    const search = query.search?.trim();
+
+    const where: Prisma.ClassRoomWhereInput = {
+      institutionId,
+      programId,
+      ...(search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                code: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    return this.prisma.classRoom.findMany({
+      where,
+      orderBy: [{ name: "asc" }],
       select: {
         id: true,
+        institutionId: true,
+        programId: true,
+        gradeId: true,
         name: true,
+        code: true,
+        capacity: true,
         createdAt: true,
+        updatedAt: true,
         grade: {
           select: {
             id: true,
@@ -585,7 +377,545 @@ export class ProgramsService {
             stage: true,
           },
         },
+        _count: {
+          select: {
+            students: true,
+          },
+        },
       },
     });
+  }
+
+  async getClassRoomById(
+    institutionId: string,
+    programId: string,
+    classRoomId: string,
+  ) {
+    const classRoom = await this.prisma.classRoom.findFirst({
+      where: {
+        id: classRoomId,
+        institutionId,
+        programId,
+      },
+      select: {
+        id: true,
+        institutionId: true,
+        programId: true,
+        gradeId: true,
+        name: true,
+        code: true,
+        capacity: true,
+        createdAt: true,
+        updatedAt: true,
+        grade: {
+          select: {
+            id: true,
+            name: true,
+            order: true,
+            stage: true,
+          },
+        },
+        _count: {
+          select: {
+            students: true,
+          },
+        },
+      },
+    });
+
+    if (!classRoom) {
+      throw new NotFoundException("Class not found");
+    }
+
+    return classRoom;
+  }
+
+  async createClassRoom(
+    institutionId: string,
+    programId: string,
+    dto: CreateClassRoomDto,
+  ) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    const name = this.normalizeRequiredText(dto.name, "Class name");
+    const code = this.normalizeOptionalCode(dto.code);
+    const gradeId = dto.gradeId?.trim() || null;
+
+    if (gradeId) {
+      await this.assertGradeBelongsToProgram(programId, gradeId);
+    }
+
+    const duplicateByName = await this.prisma.classRoom.findFirst({
+      where: {
+        institutionId,
+        name: {
+          equals: name,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true },
+    });
+
+    if (duplicateByName) {
+      throw new BadRequestException("Class name already exists in this institution");
+    }
+
+    if (code) {
+      const duplicateByCode = await this.prisma.classRoom.findFirst({
+        where: {
+          institutionId,
+          programId,
+          code,
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByCode) {
+        throw new BadRequestException("Class code already exists in this program");
+      }
+    }
+
+    const classRoom = await this.prisma.classRoom.create({
+      data: {
+        institutionId,
+        programId,
+        gradeId,
+        name,
+        code,
+        capacity: dto.capacity ?? null,
+      },
+      select: {
+        id: true,
+        institutionId: true,
+        programId: true,
+        gradeId: true,
+        name: true,
+        code: true,
+        capacity: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      message: "Class created successfully",
+      classRoom,
+    };
+  }
+
+  async updateClassRoom(
+    institutionId: string,
+    programId: string,
+    classRoomId: string,
+    dto: UpdateClassRoomDto,
+  ) {
+    const existing = await this.prisma.classRoom.findFirst({
+      where: {
+        id: classRoomId,
+        institutionId,
+        programId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Class not found");
+    }
+
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRequiredText(dto.name, "Class name")
+        : undefined;
+
+    const code =
+      dto.code !== undefined ? this.normalizeOptionalCode(dto.code) : undefined;
+
+    const gradeId =
+      dto.gradeId !== undefined ? dto.gradeId?.trim() || null : undefined;
+
+    if (gradeId) {
+      await this.assertGradeBelongsToProgram(programId, gradeId);
+    }
+
+    if (name) {
+      const duplicateByName = await this.prisma.classRoom.findFirst({
+        where: {
+          institutionId,
+          id: { not: classRoomId },
+          name: {
+            equals: name,
+            mode: "insensitive",
+          },
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByName) {
+        throw new BadRequestException("Class name already exists in this institution");
+      }
+    }
+
+    if (code) {
+      const duplicateByCode = await this.prisma.classRoom.findFirst({
+        where: {
+          institutionId,
+          programId,
+          id: { not: classRoomId },
+          code,
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByCode) {
+        throw new BadRequestException("Class code already exists in this program");
+      }
+    }
+
+    const classRoom = await this.prisma.classRoom.update({
+      where: { id: classRoomId },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(code !== undefined ? { code } : {}),
+        ...(gradeId !== undefined ? { gradeId } : {}),
+        ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+      },
+      select: {
+        id: true,
+        institutionId: true,
+        programId: true,
+        gradeId: true,
+        name: true,
+        code: true,
+        capacity: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      message: "Class updated successfully",
+      classRoom,
+    };
+  }
+
+  async listProgramGrades(institutionId: string, programId: string) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    return this.prisma.programGrade.findMany({
+      where: {
+        programId,
+      },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        programId: true,
+        templateGradeId: true,
+        name: true,
+        order: true,
+        stage: true,
+        _count: {
+          select: {
+            classes: true,
+            subjects: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getProgramGradeById(
+    institutionId: string,
+    programId: string,
+    gradeId: string,
+  ) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    const grade = await this.prisma.programGrade.findFirst({
+      where: {
+        id: gradeId,
+        programId,
+      },
+      select: {
+        id: true,
+        programId: true,
+        templateGradeId: true,
+        name: true,
+        order: true,
+        stage: true,
+        classes: {
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            institutionId: true,
+            programId: true,
+            gradeId: true,
+            name: true,
+            code: true,
+            capacity: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: {
+              select: {
+                students: true,
+              },
+            },
+          },
+        },
+        subjects: {
+          select: {
+            id: true,
+            subject: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                isCore: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!grade) {
+      throw new NotFoundException("Program grade not found");
+    }
+
+    return grade;
+  }
+
+  async createProgramGrade(
+    institutionId: string,
+    programId: string,
+    dto: CreateProgramGradeDto,
+  ) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    const name = this.normalizeRequiredText(dto.name, "Grade name");
+    const stage = this.normalizeOptionalText(dto.stage);
+    const templateGradeId = dto.templateGradeId?.trim() || null;
+
+    const duplicateByName = await this.prisma.programGrade.findFirst({
+      where: {
+        programId,
+        name: {
+          equals: name,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true },
+    });
+
+    if (duplicateByName) {
+      throw new BadRequestException("Grade name already exists in this program");
+    }
+
+    const duplicateByOrder = await this.prisma.programGrade.findFirst({
+      where: {
+        programId,
+        order: dto.order,
+      },
+      select: { id: true },
+    });
+
+    if (duplicateByOrder) {
+      throw new BadRequestException("Grade order already exists in this program");
+    }
+
+    const grade = await this.prisma.programGrade.create({
+      data: {
+        programId,
+        templateGradeId,
+        name,
+        order: dto.order,
+        stage,
+      },
+      select: {
+        id: true,
+        programId: true,
+        templateGradeId: true,
+        name: true,
+        order: true,
+        stage: true,
+      },
+    });
+
+    return {
+      message: "Program grade created successfully",
+      grade,
+    };
+  }
+
+  async updateProgramGrade(
+    institutionId: string,
+    programId: string,
+    gradeId: string,
+    dto: UpdateProgramGradeDto,
+  ) {
+    await this.assertProgramBelongsToInstitution(institutionId, programId);
+
+    const existing = await this.prisma.programGrade.findFirst({
+      where: {
+        id: gradeId,
+        programId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Program grade not found");
+    }
+
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRequiredText(dto.name, "Grade name")
+        : undefined;
+
+    const stage =
+      dto.stage !== undefined ? this.normalizeOptionalText(dto.stage) : undefined;
+
+    const templateGradeId =
+      dto.templateGradeId !== undefined
+        ? dto.templateGradeId?.trim() || null
+        : undefined;
+
+    if (name) {
+      const duplicateByName = await this.prisma.programGrade.findFirst({
+        where: {
+          programId,
+          id: { not: gradeId },
+          name: {
+            equals: name,
+            mode: "insensitive",
+          },
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByName) {
+        throw new BadRequestException("Grade name already exists in this program");
+      }
+    }
+
+    if (dto.order !== undefined) {
+      const duplicateByOrder = await this.prisma.programGrade.findFirst({
+        where: {
+          programId,
+          id: { not: gradeId },
+          order: dto.order,
+        },
+        select: { id: true },
+      });
+
+      if (duplicateByOrder) {
+        throw new BadRequestException("Grade order already exists in this program");
+      }
+    }
+
+    const grade = await this.prisma.programGrade.update({
+      where: { id: gradeId },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(dto.order !== undefined ? { order: dto.order } : {}),
+        ...(stage !== undefined ? { stage } : {}),
+        ...(templateGradeId !== undefined ? { templateGradeId } : {}),
+      },
+      select: {
+        id: true,
+        programId: true,
+        templateGradeId: true,
+        name: true,
+        order: true,
+        stage: true,
+      },
+    });
+
+    return {
+      message: "Program grade updated successfully",
+      grade,
+    };
+  }
+
+  private async assertInstitutionExists(institutionId: string) {
+    const institution = await this.prisma.institution.findUnique({
+      where: { id: institutionId },
+      select: { id: true },
+    });
+
+    if (!institution) {
+      throw new NotFoundException("Institution not found");
+    }
+  }
+
+  private async assertProgramBelongsToInstitution(
+    institutionId: string,
+    programId: string,
+  ) {
+    const program = await this.prisma.program.findFirst({
+      where: {
+        id: programId,
+        institutionId,
+      },
+      select: { id: true },
+    });
+
+    if (!program) {
+      throw new BadRequestException("Program not found in this institution");
+    }
+  }
+
+  private async assertGradeBelongsToProgram(programId: string, gradeId: string) {
+    const grade = await this.prisma.programGrade.findFirst({
+      where: {
+        id: gradeId,
+        programId,
+      },
+      select: { id: true },
+    });
+
+    if (!grade) {
+      throw new BadRequestException("Grade not found in this program");
+    }
+  }
+
+  private async assertCurriculumTemplateExists(templateId: string) {
+    const template = await this.prisma.curriculumTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true },
+    });
+
+    if (!template) {
+      throw new BadRequestException("Curriculum template not found");
+    }
+  }
+
+  private normalizeRequiredText(value: string, fieldLabel: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+
+    if (!cleaned) {
+      throw new BadRequestException(`${fieldLabel} is required`);
+    }
+
+    return cleaned;
+  }
+
+  private normalizeOptionalCode(value?: string | null) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    const cleaned = value.replace(/\s+/g, " ").trim().toUpperCase();
+    return cleaned.length ? cleaned : null;
+  }
+
+  private normalizeOptionalText(value?: string | null) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    const cleaned = value.replace(/\s+/g, " ").trim();
+    return cleaned.length ? cleaned : null;
   }
 }

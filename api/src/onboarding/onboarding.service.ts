@@ -1,882 +1,554 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import {
   AccountIntent,
-  GenderAdmissionPolicy,
-  InstitutionType,
+  InstitutionCategory,
+  InstitutionJoinRequestStatus,
+  MembershipStatus,
+  MembershipType,
   OnboardingRoute,
-  VerificationPurpose,
 } from "@prisma/client";
-import { randomInt } from "crypto";
+import { randomBytes } from "crypto";
 
 import { PrismaService } from "../prisma/prisma.service";
-import { SmsService } from "../shared/sms/sms.service";
-import { SchoolsService } from "../schools/schools.service";
-import { SetOnboardingRouteDto } from "./dto/set-onboarding-route.dto";
-import { SaveBuildIdentityDto } from "./dto/save-build-identity.dto";
-import { SaveBuildAcademicDto } from "./dto/save-build-academic.dto";
-import { SaveBuildDetailsDto } from "./dto/save-build-details.dto";
-import { SendPhoneCodeDto } from "./dto/send-phone-code.dto";
-import { VerifyPhoneCodeDto } from "./dto/verify-phone-code.dto";
-import { SavePersonalIdentityDto } from "./dto/save-personal-identity.dto";
+import { InstitutionAccessSetupService } from "../institutions/institution-access-setup.service";
+
+import { StartOnboardingDto } from "./dto/start-onboarding.dto";
+import { SetProfileDto } from "./dto/set-profile.dto";
+import { CreateInstitutionOnboardingDto } from "./dto/create-institution-onboarding.dto";
+import { RequestJoinDto } from "./dto/request-join.dto";
 
 @Injectable()
 export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sms: SmsService,
-    private readonly schoolsService: SchoolsService
+    private readonly institutionAccessSetup: InstitutionAccessSetupService
   ) {}
 
-  async getMyOnboarding(userId: string) {
+  async getStatus(userId: string) {
     const onboarding = await this.prisma.userOnboarding.findUnique({
       where: { userId },
       select: {
+        id: true,
+        userId: true,
         route: true,
         accountIntent: true,
+        institutionTypeDraft: true,
+        institutionNameDraft: true,
+        nationalityCodeDraft: true,
+        residenceCountryCodeDraft: true,
+        headlineDraft: true,
+        ownershipDraft: true,
+        levelTypeDraft: true,
+        learningModesDraft: true,
+        genderAdmissionPolicyDraft: true,
         currentStep: true,
         completedAt: true,
-        institutionTypeDraft: true,
-        institutionNameDraft: true,
-        countryDraft: true,
-        countryCodeDraft: true,
-        skuullyIdDraft: true,
-        personalHeadlineDraft: true,
-        dateOfBirthDraft: true,
-        academicLabelDraft: true,
-        academicItemsDraft: true,
-        academicSetLater: true,
-        learningModesDraft: true,
-        ownershipDraft: true,
-        levelTypeDraft: true,
-        genderAdmissionPolicyDraft: true,
-        phoneCountryCodeDraft: true,
-        phoneDialCodeDraft: true,
-        phoneNationalDraft: true,
-        phoneE164Draft: true,
-        phoneSetLater: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
-    return {
-      route: onboarding?.route ?? null,
-      accountIntent: onboarding?.accountIntent ?? null,
-      currentStep: onboarding?.currentStep ?? null,
-      completedAt: onboarding?.completedAt ?? null,
-      draft: onboarding
-        ? {
-            accountIntent: onboarding.accountIntent,
-            institutionType: onboarding.institutionTypeDraft,
-            institutionName: onboarding.institutionNameDraft,
-            country: onboarding.countryDraft,
-            countryCode: onboarding.countryCodeDraft,
-            skuullyId: onboarding.skuullyIdDraft,
-            personalHeadline: onboarding.personalHeadlineDraft,
-            dateOfBirth: onboarding.dateOfBirthDraft,
-            academicLabel: onboarding.academicLabelDraft,
-            academicItems: onboarding.academicItemsDraft ?? [],
-            academicSetLater: onboarding.academicSetLater,
-            learningModes: onboarding.learningModesDraft ?? [],
-            ownership: onboarding.ownershipDraft,
-            levelType: onboarding.levelTypeDraft,
-            genderAdmissionPolicy: onboarding.genderAdmissionPolicyDraft,
-            phoneCountryCode: onboarding.phoneCountryCodeDraft,
-            phoneDialCode: onboarding.phoneDialCodeDraft,
-            phoneNational: onboarding.phoneNationalDraft,
-            phoneE164: onboarding.phoneE164Draft,
-            phoneSetLater: onboarding.phoneSetLater,
-          }
-        : null,
-    };
-  }
-
-  async setRoute(userId: string, dto: SetOnboardingRouteDto) {
-    await this.ensureUserExists(userId);
-
-    const isBuild = dto.route === OnboardingRoute.BUILD_INSTITUTION;
-    const isPersonal = dto.route === OnboardingRoute.PERSONAL_ACCOUNT;
-
-    const onboarding = await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: dto.route,
-        currentStep: "route",
-
-        ...(isBuild
-          ? {
-              accountIntent: null,
-              skuullyIdDraft: null,
-              personalHeadlineDraft: null,
-              dateOfBirthDraft: null,
-            }
-          : {}),
-
-        ...(isPersonal
-          ? {
-              institutionTypeDraft: null,
-              institutionNameDraft: null,
-              countryDraft: null,
-              countryCodeDraft: null,
-              academicLabelDraft: null,
-              academicItemsDraft: [],
-              academicSetLater: false,
-              learningModesDraft: [],
-              genderAdmissionPolicyDraft: null,
-              ownershipDraft: null,
-              levelTypeDraft: null,
-            }
-          : {}),
-      },
-      update: {
-        route: dto.route,
-        currentStep: "route",
-
-        ...(isBuild
-          ? {
-              accountIntent: null,
-              skuullyIdDraft: null,
-              personalHeadlineDraft: null,
-              dateOfBirthDraft: null,
-            }
-          : {}),
-
-        ...(isPersonal
-          ? {
-              institutionTypeDraft: null,
-              institutionNameDraft: null,
-              countryDraft: null,
-              countryCodeDraft: null,
-              academicLabelDraft: null,
-              academicItemsDraft: [],
-              academicSetLater: false,
-              learningModesDraft: [],
-              genderAdmissionPolicyDraft: null,
-              ownershipDraft: null,
-              levelTypeDraft: null,
-            }
-          : {}),
-      },
-      select: {
-        route: true,
-        currentStep: true,
-      },
-    });
-
-    return {
-      message: "Onboarding route saved",
-      route: onboarding.route,
-      currentStep: onboarding.currentStep,
-    };
-  }
-
-  /* ---------------- BUILD INSTITUTION ---------------- */
-
-  async saveBuildIdentity(userId: string, dto: SaveBuildIdentityDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const onboarding = await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "identity",
-        institutionTypeDraft: dto.institutionType,
-        institutionNameDraft: dto.institutionName.trim(),
-        countryDraft: dto.country.trim(),
-        countryCodeDraft: dto.countryCode.trim().toUpperCase(),
-      },
-      update: {
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "identity",
-        institutionTypeDraft: dto.institutionType,
-        institutionNameDraft: dto.institutionName.trim(),
-        countryDraft: dto.country.trim(),
-        countryCodeDraft: dto.countryCode.trim().toUpperCase(),
-      },
-    });
-
-    return {
-      message: "Identity step saved",
-      currentStep: onboarding.currentStep,
-    };
-  }
-
-  getAcademicOptions(institutionType: string, countryCode: string) {
-    const type = String(institutionType || "").toUpperCase() as InstitutionType;
-    const code = String(countryCode || "").toUpperCase();
-
-    if (type === InstitutionType.SCHOOL || type === InstitutionType.ACADEMY) {
-      const options = [
-        ...(code === "KE"
-          ? [
-              {
-                label: "CBC",
-                code: "KE_CBC",
-                category: "national",
-                recommended: true,
-              },
-              {
-                label: "8-4-4",
-                code: "KE_844",
-                category: "legacy",
-              },
-            ]
-          : []),
-        {
-          label: "Cambridge Curriculum",
-          code: "CAM_IGCSE",
-          category: "international",
-        },
-        {
-          label: "International Baccalaureate (IB)",
-          code: "IB",
-          category: "international",
-        },
-        {
-          label: "American Curriculum",
-          code: "US_GENERAL",
-          category: "international",
-        },
-        {
-          label: "British Curriculum",
-          code: "BRITISH",
-          category: "international",
-        },
-        {
-          label: "CBSE",
-          code: "CBSE",
-          category: "international",
-        },
-        {
-          label: "Montessori",
-          code: "MONTESSORI",
-          category: "alternative",
-        },
-      ];
-
-      return {
-        label: "Curricula",
-        description:
-          "Choose one or more curricula for your institution, or set them up later.",
-        options,
-      };
-    }
-
-    if (
-      type === InstitutionType.COLLEGE ||
-      type === InstitutionType.UNIVERSITY
-    ) {
-      return {
-        label: "Academic frameworks",
-        description:
-          "Choose one or more academic frameworks, or leave them for later.",
-        options: [
-          { label: "Semester-based", category: "academic_framework" },
-          { label: "Trimester-based", category: "academic_framework" },
-          { label: "Modular", category: "academic_framework" },
-          { label: "Credit-hour system", category: "academic_framework" },
-          { label: "Competency-based", category: "academic_framework" },
-          { label: "Outcome-based", category: "academic_framework" },
-        ],
-      };
-    }
-
-    return {
-      label: "Training frameworks",
-      description:
-        "Choose one or more training frameworks, or set them up later.",
-      options: [
-        { label: "Certification-based", category: "training_framework" },
-        { label: "Competency-based", category: "training_framework" },
-        { label: "Module-based", category: "training_framework" },
-        { label: "Workshop-led", category: "training_framework" },
-        { label: "Industry-aligned", category: "training_framework" },
-      ],
-    };
-  }
-
-  async saveBuildAcademic(userId: string, dto: SaveBuildAcademicDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const uniqueItems = [
-      ...new Set(
-        (dto.selectedItems ?? []).map((item) => item.trim()).filter(Boolean)
-      ),
-    ];
-
-    const onboarding = await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "academic",
-        academicLabelDraft: dto.label?.trim() || null,
-        academicItemsDraft: uniqueItems,
-        academicSetLater: dto.setUpLater,
-      },
-      update: {
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "academic",
-        academicLabelDraft: dto.label?.trim() || null,
-        academicItemsDraft: uniqueItems,
-        academicSetLater: dto.setUpLater,
-      },
-    });
-
-    return {
-      message: "Academic step saved",
-      currentStep: onboarding.currentStep,
-    };
-  }
-
-  getDetailOptions(institutionType: string) {
-    const type = String(institutionType || "").toUpperCase() as InstitutionType;
-
-    const genderOptions = [
-      { label: "Boys only", value: GenderAdmissionPolicy.BOYS_ONLY },
-      { label: "Girls only", value: GenderAdmissionPolicy.GIRLS_ONLY },
-      { label: "Mixed", value: GenderAdmissionPolicy.MIXED },
-    ];
-
-    switch (type) {
-      case InstitutionType.SCHOOL:
-        return {
-          learningModes: ["DAY", "BOARDING", "ONLINE", "HYBRID", "IN_PERSON"],
-          ownerships: ["Private", "Public", "International"],
-          levelTypes: ["Primary", "Secondary", "Combined"],
-          genderAdmissionPolicies: genderOptions,
-        };
-
-      case InstitutionType.COLLEGE:
-        return {
-          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
-          ownerships: ["Private", "Public"],
-          levelTypes: ["Certificate", "Diploma", "Mixed"],
-          genderAdmissionPolicies: genderOptions,
-        };
-
-      case InstitutionType.UNIVERSITY:
-        return {
-          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
-          ownerships: ["Private", "Public"],
-          levelTypes: ["Undergraduate", "Postgraduate", "Both"],
-          genderAdmissionPolicies: genderOptions,
-        };
-
-      default:
-        return {
-          learningModes: ["IN_PERSON", "HYBRID", "ONLINE", "DAY", "BOARDING"],
-          ownerships: ["Private", "Public"],
-          levelTypes: ["General"],
-          genderAdmissionPolicies: genderOptions,
-        };
-    }
-  }
-
-  async saveBuildDetails(userId: string, dto: SaveBuildDetailsDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const onboarding = await this.prisma.userOnboarding.upsert({
-      where: { userId },
-      create: {
-        userId,
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "details",
-        learningModesDraft: dto.learningModes,
-        ownershipDraft: dto.ownership?.trim() || null,
-        levelTypeDraft: dto.levelType?.trim() || null,
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-      },
-      update: {
-        route: OnboardingRoute.BUILD_INSTITUTION,
-        currentStep: "details",
-        learningModesDraft: dto.learningModes,
-        ownershipDraft: dto.ownership?.trim() || null,
-        levelTypeDraft: dto.levelType?.trim() || null,
-        genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
-      },
-    });
-
-    return {
-      message: "Details step saved",
-      currentStep: onboarding.currentStep,
-    };
-  }
-
-  async getBuildReview(userId: string) {
-    const onboarding = await this.prisma.userOnboarding.findUnique({
-      where: { userId },
-    });
-
-    if (!onboarding) {
-      throw new BadRequestException("No onboarding draft found");
-    }
-
-    return {
-      institutionType: onboarding.institutionTypeDraft,
-      institutionName: onboarding.institutionNameDraft,
-      country: onboarding.countryDraft,
-      countryCode: onboarding.countryCodeDraft,
-      academicLabel: onboarding.academicLabelDraft,
-      academicItems: onboarding.academicItemsDraft,
-      academicSetLater: onboarding.academicSetLater,
-      learningModes: onboarding.learningModesDraft,
-      ownership: onboarding.ownershipDraft,
-      levelType: onboarding.levelTypeDraft,
-      genderAdmissionPolicy: onboarding.genderAdmissionPolicyDraft,
-      phone: onboarding.phoneE164Draft,
-      phoneSetLater: onboarding.phoneSetLater,
-    };
-  }
-
-  async completeBuildInstitution(userId: string) {
-    await this.ensureVerifiedUser(userId);
-
-    const onboarding = await this.prisma.userOnboarding.findUnique({
-      where: { userId },
-      select: {
-        institutionTypeDraft: true,
-        institutionNameDraft: true,
-        countryDraft: true,
-        countryCodeDraft: true,
-        academicLabelDraft: true,
-        academicItemsDraft: true,
-        academicSetLater: true,
-        learningModesDraft: true,
-        ownershipDraft: true,
-        levelTypeDraft: true,
-        genderAdmissionPolicyDraft: true,
-        phoneCountryCodeDraft: true,
-        phoneDialCodeDraft: true,
-        phoneNationalDraft: true,
-        phoneE164Draft: true,
-        phoneSetLater: true,
-      },
-    });
-
-    if (!onboarding) {
-      throw new BadRequestException("No onboarding draft found");
-    }
-
-    if (
-      !onboarding.institutionTypeDraft ||
-      !onboarding.institutionNameDraft ||
-      !onboarding.countryDraft ||
-      !onboarding.countryCodeDraft
-    ) {
-      throw new BadRequestException("Onboarding is incomplete");
-    }
-
-    return this.schoolsService.createSchool(userId, {
-      name: onboarding.institutionNameDraft,
-      country: onboarding.countryDraft,
-      countryCode: onboarding.countryCodeDraft,
-      institutionType: onboarding.institutionTypeDraft,
-      organizationName: onboarding.institutionNameDraft,
-      branchName: "Main Campus",
-      curriculumName:
-        onboarding.academicSetLater || !(onboarding.academicItemsDraft ?? []).length
-          ? undefined
-          : onboarding.academicItemsDraft![0],
-      academicSetup: {
-        label: onboarding.academicLabelDraft ?? undefined,
-        selectedItems: onboarding.academicItemsDraft ?? [],
-        setUpLater: onboarding.academicSetLater,
-      },
-      institutionProfile: {
-        learningModes: onboarding.learningModesDraft ?? [],
-        ownership: onboarding.ownershipDraft ?? undefined,
-        levelType: onboarding.levelTypeDraft ?? undefined,
-        genderAdmissionPolicy:
-          onboarding.genderAdmissionPolicyDraft ?? GenderAdmissionPolicy.MIXED,
-      },
-      security: {
-        addPhoneLater: onboarding.phoneSetLater,
-        phone:
-          onboarding.phoneSetLater || !onboarding.phoneE164Draft
-            ? null
-            : {
-                countryCode: onboarding.phoneCountryCodeDraft ?? undefined,
-                dialCode: onboarding.phoneDialCodeDraft ?? undefined,
-                nationalNumber: onboarding.phoneNationalDraft ?? undefined,
-                e164: onboarding.phoneE164Draft,
-              },
-      },
-    } as any);
-  }
-
-  /* ---------------- PERSONAL ACCOUNT ---------------- */
-
-  async savePersonalIdentity(userId: string, dto: SavePersonalIdentityDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const skuullyId = this.normalizeSkuullyId(dto.skuullyId);
-    const fullName = dto.fullName.trim();
-    const headline = dto.headline?.trim() || null;
-    const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
-    const accountIntent = dto.accountIntent as AccountIntent;
-    const { firstName, lastName } = this.splitName(fullName);
-
-    if (skuullyId.length < 3) {
-      throw new BadRequestException("Skuully ID must be at least 3 characters");
-    }
-
-    if (fullName.length < 2) {
-      throw new BadRequestException("Full name is required");
-    }
-
-    if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) {
-      throw new BadRequestException("Date of birth is invalid");
-    }
-
-    const existing = await this.prisma.user.findFirst({
+    const memberships = await this.prisma.membership.findMany({
       where: {
-        skuullyId,
-        NOT: { id: userId },
+        userId,
+        status: MembershipStatus.ACTIVE,
       },
-      select: { id: true },
+      orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        membershipType: true,
+        status: true,
+        isPrimary: true,
+        joinedAt: true,
+        createdAt: true,
+        institution: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            institutionType: true,
+            institutionCategory: true,
+            verificationStatus: true,
+          },
+        },
+      },
     });
 
-    if (existing) {
-      throw new BadRequestException("Skuully ID is already taken");
-    }
-
-    const isMinor = dateOfBirth ? this.computeIsMinor(dateOfBirth) : false;
-
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          fullName,
-          firstName,
-          lastName,
-          headline,
-          dateOfBirth,
-          isMinor,
-        },
-      }),
-      this.prisma.userOnboarding.upsert({
-        where: { userId },
-        create: {
-          userId,
-          route: OnboardingRoute.PERSONAL_ACCOUNT,
-          currentStep: "identity",
-          accountIntent,
-          skuullyIdDraft: skuullyId,
-          personalHeadlineDraft: headline,
-          dateOfBirthDraft: dateOfBirth,
-        },
-        update: {
-          route: OnboardingRoute.PERSONAL_ACCOUNT,
-          currentStep: "identity",
-          accountIntent,
-          skuullyIdDraft: skuullyId,
-          personalHeadlineDraft: headline,
-          dateOfBirthDraft: dateOfBirth,
-        },
-      }),
-    ]);
-
     return {
-      message: "Personal identity saved",
+      completed: !!onboarding?.completedAt,
+      onboarding,
+      memberships,
     };
   }
 
-  async completePersonalAccount(userId: string) {
-    await this.ensureVerifiedUser(userId);
+  async start(userId: string, dto: StartOnboardingDto) {
+    const route =
+      dto.accountIntent === AccountIntent.FOUNDER
+        ? OnboardingRoute.BUILD_INSTITUTION
+        : OnboardingRoute.PERSONAL_ACCOUNT;
 
-    const onboarding = await this.prisma.userOnboarding.findUnique({
+    return this.prisma.userOnboarding.upsert({
       where: { userId },
-      select: {
-        skuullyIdDraft: true,
-        personalHeadlineDraft: true,
-        dateOfBirthDraft: true,
-        accountIntent: true,
+      create: {
+        userId,
+        route,
+        accountIntent: dto.accountIntent,
+        currentStep: "start",
+      },
+      update: {
+        route,
+        accountIntent: dto.accountIntent,
+        currentStep: "start",
+      },
+    });
+  }
+
+  async setProfile(userId: string, dto: SetProfileDto) {
+    const nationalityCode = this.normalizeCountryCode(dto.nationalityCode);
+    const residenceCountryCode = this.normalizeCountryCode(
+      dto.residenceCountryCode
+    );
+    const headline = this.normalizeOptionalText(dto.headline);
+
+    await this.ensureCountryExists(nationalityCode);
+    await this.ensureCountryExists(residenceCountryCode);
+
+    const onboarding = await this.prisma.userOnboarding.upsert({
+      where: { userId },
+      create: {
+        userId,
+        route: OnboardingRoute.PERSONAL_ACCOUNT,
+        nationalityCodeDraft: nationalityCode,
+        residenceCountryCodeDraft: residenceCountryCode,
+        headlineDraft: headline,
+        currentStep: "profile",
+      },
+      update: {
+        nationalityCodeDraft: nationalityCode,
+        residenceCountryCodeDraft: residenceCountryCode,
+        headlineDraft: headline,
+        currentStep: "profile",
       },
     });
 
-    if (!onboarding?.skuullyIdDraft) {
-      throw new BadRequestException("Skuully ID is missing");
-    }
-
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        skuullyId: onboarding.skuullyIdDraft,
-        NOT: { id: userId },
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        nationalityCode,
+        residenceCountryCode,
+        headline: headline ?? undefined,
+        lastActiveAt: new Date(),
       },
-      select: { id: true },
     });
 
-    if (existing) {
-      throw new BadRequestException("Skuully ID is already taken");
+    return {
+      message: "Profile onboarding saved successfully",
+      onboarding,
+    };
+  }
+
+  async createInstitution(
+    userId: string,
+    dto: CreateInstitutionOnboardingDto
+  ) {
+    const cleanedName = this.normalizeInstitutionName(dto.name);
+    const slug = await this.generateUniqueInstitutionSlug(cleanedName);
+
+    const countryCode = dto.countryCode
+      ? this.normalizeCountryCode(dto.countryCode)
+      : null;
+
+    if (countryCode) {
+      await this.ensureCountryExists(countryCode);
     }
 
-    const isMinor = onboarding.dateOfBirthDraft
-      ? this.computeIsMinor(onboarding.dateOfBirthDraft)
-      : false;
+    if (dto.subdivisionId) {
+      await this.ensureSubdivisionExists(dto.subdivisionId);
+    }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
+    if (dto.cityId) {
+      await this.ensureCityExists(dto.cityId);
+    }
+
+    const legalName = this.normalizeOptionalText(dto.legalName);
+    const email = this.normalizeOptionalEmail(dto.email);
+    const primaryPhone = this.normalizeOptionalText(dto.primaryPhone);
+    const websiteUrl = this.normalizeOptionalText(dto.websiteUrl);
+    const addressLine1 = this.normalizeOptionalText(dto.addressLine1);
+    const addressLine2 = this.normalizeOptionalText(dto.addressLine2);
+    const timezone = this.normalizeOptionalText(dto.timezone);
+    const ownership = this.normalizeOptionalText(dto.ownership);
+    const levelType = this.normalizeOptionalText(dto.levelType);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const institution = await tx.institution.create({
         data: {
-          skuullyId: onboarding.skuullyIdDraft,
-          headline: onboarding.personalHeadlineDraft ?? undefined,
-          dateOfBirth: onboarding.dateOfBirthDraft ?? undefined,
-          isMinor,
+          name: cleanedName,
+          slug,
+          institutionType: dto.institutionType,
+          institutionCategory:
+            dto.institutionCategory ??
+            this.mapInstitutionCategory(dto.institutionType),
+          legalName,
+          email,
+          primaryPhone,
+          websiteUrl,
+          countryCode,
+          subdivisionId: dto.subdivisionId ?? null,
+          cityId: dto.cityId ?? null,
+          addressLine1,
+          addressLine2,
+          timezone,
+          ownership,
+          levelType,
+          genderAdmissionPolicy: dto.genderAdmissionPolicy ?? null,
+          learningModes: dto.learningModes ?? [],
           onboardingCompletedAt: new Date(),
         },
-      }),
-      this.prisma.userOnboarding.update({
-        where: { userId },
-        data: {
-          route: OnboardingRoute.PERSONAL_ACCOUNT,
-          currentStep: "completed",
-          completedAt: new Date(),
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          institutionType: true,
+          institutionCategory: true,
+          countryCode: true,
+          verificationStatus: true,
+          createdAt: true,
         },
-      }),
-    ]);
+      });
 
-    return {
-      message: "Personal account setup completed",
-    };
-  }
+      const ownerMembership = await tx.membership.create({
+        data: {
+          userId,
+          institutionId: institution.id,
+          membershipType: MembershipType.OWNER,
+          status: MembershipStatus.ACTIVE,
+          isPrimary: true,
+          joinedAt: new Date(),
+        },
+        select: {
+          id: true,
+          institutionId: true,
+          userId: true,
+        },
+      });
 
-  /* ---------------- SHARED SECURITY ---------------- */
-
-  async sendPhoneCode(userId: string, dto: SendPhoneCodeDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const e164 = dto.e164.trim();
-
-    if (!e164.startsWith("+")) {
-      throw new BadRequestException("Phone number must be in E.164 format");
-    }
-
-    const onboarding = await this.prisma.userOnboarding.findUnique({
-      where: { userId },
-      select: { route: true },
-    });
-
-    const activeRoute = onboarding?.route ?? OnboardingRoute.PERSONAL_ACCOUNT;
-    const code = String(randomInt(100000, 1000000));
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await this.prisma.$transaction([
-      this.prisma.phoneVerificationCode.updateMany({
+      await tx.membership.updateMany({
         where: {
           userId,
-          phone: e164,
-          purpose: VerificationPurpose.PHONE_VERIFY,
-          usedAt: null,
-          expiresAt: { gt: new Date() },
+          id: { not: ownerMembership.id },
+          isPrimary: true,
         },
         data: {
-          usedAt: new Date(),
+          isPrimary: false,
         },
-      }),
-      this.prisma.phoneVerificationCode.create({
-        data: {
-          userId,
-          phone: e164,
-          code,
-          purpose: VerificationPurpose.PHONE_VERIFY,
-          expiresAt,
-        },
-      }),
-      this.prisma.userOnboarding.upsert({
+      });
+
+      await tx.userOnboarding.upsert({
         where: { userId },
         create: {
           userId,
-          route: activeRoute,
-          currentStep: "security",
-          phoneCountryCodeDraft: dto.countryCode.trim().toUpperCase(),
-          phoneDialCodeDraft: dto.dialCode.trim(),
-          phoneNationalDraft: dto.nationalNumber.trim(),
-          phoneE164Draft: e164,
-          phoneSetLater: false,
+          route: OnboardingRoute.BUILD_INSTITUTION,
+          accountIntent: AccountIntent.FOUNDER,
+          institutionTypeDraft: dto.institutionType,
+          institutionNameDraft: cleanedName,
+          residenceCountryCodeDraft: countryCode,
+          ownershipDraft: ownership,
+          levelTypeDraft: levelType,
+          learningModesDraft: dto.learningModes ?? [],
+          genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+          currentStep: "institution-created",
+          completedAt: new Date(),
         },
         update: {
-          route: activeRoute,
-          currentStep: "security",
-          phoneCountryCodeDraft: dto.countryCode.trim().toUpperCase(),
-          phoneDialCodeDraft: dto.dialCode.trim(),
-          phoneNationalDraft: dto.nationalNumber.trim(),
-          phoneE164Draft: e164,
-          phoneSetLater: false,
+          route: OnboardingRoute.BUILD_INSTITUTION,
+          accountIntent: AccountIntent.FOUNDER,
+          institutionTypeDraft: dto.institutionType,
+          institutionNameDraft: cleanedName,
+          residenceCountryCodeDraft: countryCode,
+          ownershipDraft: ownership,
+          levelTypeDraft: levelType,
+          learningModesDraft: dto.learningModes ?? [],
+          genderAdmissionPolicyDraft: dto.genderAdmissionPolicy ?? null,
+          currentStep: "institution-created",
+          completedAt: new Date(),
         },
-      }),
-    ]);
+      });
 
-    await this.sms.sendVerificationCode({
-      to: e164,
-      code,
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          onboardingCompletedAt: new Date(),
+          lastActiveAt: new Date(),
+        },
+      });
+
+      return {
+        institution,
+        ownerMembership,
+      };
+    });
+
+    await this.institutionAccessSetup.bootstrapInstitutionAccess({
+      institutionId: result.institution.id,
+      ownerMembershipId: result.ownerMembership.id,
+    });
+
+    const hydratedInstitution = await this.prisma.institution.findUnique({
+      where: { id: result.institution.id },
+      include: {
+        departments: {
+          orderBy: { name: "asc" },
+        },
+        roleDefinitions: {
+          orderBy: { name: "asc" },
+          include: {
+            permissions: {
+              orderBy: { permission: "asc" },
+            },
+          },
+        },
+      },
     });
 
     return {
-      message: "Verification code sent",
-      expiresInSeconds: 600,
+      message: "Institution created successfully",
+      institution: hydratedInstitution,
+      ownerMembershipId: result.ownerMembership.id,
     };
   }
 
-  async verifyPhoneCode(userId: string, dto: VerifyPhoneCodeDto) {
-    await this.ensureVerifiedUser(userId);
-
-    const e164 = dto.e164.trim();
-    const code = dto.code.trim();
-
-    const record = await this.prisma.phoneVerificationCode.findFirst({
-      where: {
-        userId,
-        phone: e164,
-        code,
-        purpose: VerificationPurpose.PHONE_VERIFY,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: {
-        createdAt: "desc",
+  async requestJoin(userId: string, dto: RequestJoinDto) {
+    const institution = await this.prisma.institution.findUnique({
+      where: { id: dto.institutionId },
+      select: {
+        id: true,
+        name: true,
+        verificationStatus: true,
       },
     });
 
-    if (!record) {
+    if (!institution) {
+      throw new BadRequestException("Institution not found");
+    }
+
+    const existingMembership = await this.prisma.membership.findFirst({
+      where: {
+        userId,
+        institutionId: dto.institutionId,
+      },
+      select: {
+        id: true,
+        status: true,
+        membershipType: true,
+      },
+    });
+
+    if (existingMembership) {
       throw new BadRequestException(
-        "Invalid or expired phone verification code"
+        "You already have a relationship with this institution"
       );
     }
 
-    await this.prisma.$transaction([
-      this.prisma.phoneVerificationCode.update({
-        where: { id: record.id },
-        data: {
-          usedAt: new Date(),
-        },
-      }),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          phone: e164,
-          phoneVerifiedAt: new Date(),
-        },
-      }),
-      this.prisma.userOnboarding.update({
-        where: { userId },
-        data: {
-          phoneE164Draft: e164,
-          phoneSetLater: false,
-          currentStep: "security",
-        },
-      }),
-    ]);
-
-    return {
-      message: "Phone verified successfully",
-      verified: true,
-      phoneVerified: true,
-      phone: e164,
-    };
-  }
-
-  async skipPhone(userId: string) {
-    await this.ensureVerifiedUser(userId);
-
-    const onboarding = await this.prisma.userOnboarding.findUnique({
-      where: { userId },
-      select: { route: true },
+    const existingRequest = await this.prisma.institutionJoinRequest.findFirst({
+      where: {
+        userId,
+        institutionId: dto.institutionId,
+        requestType: dto.requestType,
+        status: InstitutionJoinRequestStatus.PENDING,
+      },
+      select: { id: true },
     });
 
-    const activeRoute = onboarding?.route ?? OnboardingRoute.PERSONAL_ACCOUNT;
+    if (existingRequest) {
+      throw new BadRequestException("A pending join request already exists");
+    }
+
+    const joinRequest = await this.prisma.institutionJoinRequest.create({
+      data: {
+        userId,
+        institutionId: dto.institutionId,
+        requestType: dto.requestType,
+        status: InstitutionJoinRequestStatus.PENDING,
+        note: this.normalizeOptionalText(dto.note),
+        referenceNumber: this.normalizeOptionalText(dto.referenceNumber),
+        admissionNo: this.normalizeOptionalText(dto.admissionNo),
+        staffNo: this.normalizeOptionalText(dto.staffNo),
+      },
+      select: {
+        id: true,
+        requestType: true,
+        status: true,
+        createdAt: true,
+        institution: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
+    });
 
     await this.prisma.userOnboarding.upsert({
       where: { userId },
       create: {
         userId,
-        route: activeRoute,
-        currentStep: "security",
-        phoneSetLater: true,
+        route: OnboardingRoute.PERSONAL_ACCOUNT,
+        currentStep: "join-request-submitted",
       },
       update: {
-        route: activeRoute,
-        currentStep: "security",
-        phoneSetLater: true,
+        route: OnboardingRoute.PERSONAL_ACCOUNT,
+        currentStep: "join-request-submitted",
+      },
+    });
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        lastActiveAt: new Date(),
       },
     });
 
     return {
-      message: "Phone step skipped",
+      message: "Join request submitted successfully",
+      joinRequest,
     };
   }
 
-  /* ---------------- HELPERS ---------------- */
+  private mapInstitutionCategory(
+    institutionType: CreateInstitutionOnboardingDto["institutionType"]
+  ): InstitutionCategory {
+    switch (institutionType) {
+      case "SCHOOL":
+      case "COLLEGE":
+      case "UNIVERSITY":
+      case "POLYTECHNIC":
+      case "VOCATIONAL":
+      case "TRAINING_CENTER":
+      case "ACADEMY":
+        return "SCHOOL";
 
-  private normalizeSkuullyId(value: string) {
-    return value
-      .trim()
-      .toLowerCase()
-      .replace(/^@+/, "")
-      .replace(/[^a-z0-9._]/g, "")
-      .replace(/\.\.+/g, ".")
-      .replace(/__+/g, "_")
-      .replace(/^\.|\.$/g, "")
-      .slice(0, 24);
+      case "GOVERNMENT_BODY":
+        return "GOVERNMENT";
+
+      case "NGO":
+      case "CHILDREN_HOME":
+        return "NGO";
+
+      case "EXAM_BODY":
+      case "SPORTS_BODY":
+      case "DRAMA_BODY":
+        return "COMPETITION_BODY";
+
+      case "LOAN_BODY":
+        return "SUPPORT_BODY";
+
+      default:
+        return "OTHER";
+    }
   }
 
-  private splitName(fullName: string) {
-    const parts = fullName.trim().split(/\s+/).filter(Boolean);
-    const firstName = parts[0] ?? null;
-    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+  private async generateUniqueInstitutionSlug(name: string) {
+    const base =
+      name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "") || "institution";
 
-    return { firstName, lastName };
-  }
+    for (let i = 0; i < 20; i++) {
+      const suffix = i === 0 ? "" : `-${this.randomNumericSuffix(4)}`;
+      const candidate = `${base}${suffix}`;
 
-  private computeIsMinor(dateOfBirth: Date) {
-    const today = new Date();
-    let age = today.getFullYear() - dateOfBirth.getFullYear();
-    const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+      const exists = await this.prisma.institution.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
 
-    if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())
-    ) {
-      age -= 1;
+      if (!exists) {
+        return candidate;
+      }
     }
 
-    return age < 18;
+    throw new BadRequestException("Unable to generate unique institution slug");
   }
 
-  private async ensureUserExists(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  private randomNumericSuffix(length: number) {
+    const digits = "0123456789";
+    const bytes = randomBytes(length);
+    let result = "";
+
+    for (let i = 0; i < length; i++) {
+      result += digits[bytes[i] % digits.length];
+    }
+
+    return result;
+  }
+
+  private normalizeInstitutionName(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+
+    if (cleaned.length < 2) {
+      throw new BadRequestException("Institution name is required");
+    }
+
+    return cleaned;
+  }
+
+  private normalizeCountryCode(value: string) {
+    const cleaned = value.trim().toUpperCase();
+
+    if (!/^[A-Z]{2}$/.test(cleaned)) {
+      throw new BadRequestException("Invalid country code");
+    }
+
+    return cleaned;
+  }
+
+  private normalizeOptionalEmail(value?: string | null) {
+    if (!value) return null;
+    return value.trim().toLowerCase();
+  }
+
+  private normalizeOptionalText(value?: string | null) {
+    if (!value) return null;
+    const cleaned = value.trim();
+    return cleaned.length ? cleaned : null;
+  }
+
+  private async ensureCountryExists(code: string) {
+    const country = await this.prisma.geoCountry.findUnique({
+      where: { code },
+      select: { id: true, isActive: true },
+    });
+
+    if (!country || !country.isActive) {
+      throw new BadRequestException("Selected country is not available");
+    }
+  }
+
+  private async ensureSubdivisionExists(id: string) {
+    const row = await this.prisma.geoSubdivision.findUnique({
+      where: { id },
       select: { id: true },
     });
 
-    if (!user) {
-      throw new ForbiddenException("User not found");
+    if (!row) {
+      throw new BadRequestException("Selected subdivision is not available");
     }
-
-    return user;
   }
 
-  private async ensureVerifiedUser(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        emailVerifiedAt: true,
-      },
+  private async ensureCityExists(id: string) {
+    const row = await this.prisma.geoCity.findUnique({
+      where: { id },
+      select: { id: true },
     });
 
-    if (!user) {
-      throw new ForbiddenException("User not found");
+    if (!row) {
+      throw new BadRequestException("Selected city is not available");
     }
-
-    if (!user.emailVerifiedAt) {
-      throw new ForbiddenException("Verify your email first");
-    }
-
-    return user;
   }
 }

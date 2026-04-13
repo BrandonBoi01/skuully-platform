@@ -3,20 +3,20 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
 import {
   AuthProvider,
   LoginMethod,
+  MembershipStatus,
   Prisma,
   VerificationPurpose,
 } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { createHash, randomBytes, randomInt } from "crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 import { PrismaService } from "../prisma/prisma.service";
-import { UsersService } from "../users/users.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { VerifyEmailDto } from "./dto/verify-email.dto";
@@ -33,7 +33,7 @@ type SafeUser = {
   fullName: string;
   firstName: string | null;
   lastName: string | null;
-  email: string;
+  email: string | null;
   phone: string | null;
   skuullyId: string;
   emailVerifiedAt: Date | null;
@@ -49,8 +49,7 @@ export class AuthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly users: UsersService,
-    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
     private readonly emailService: EmailService,
     private readonly authAudit: AuthAuditService,
     private readonly sessionTokens: SessionTokenService
@@ -62,7 +61,10 @@ export class AuthService {
     const { firstName, lastName } = this.splitName(fullName);
     const { ipAddress, userAgent } = this.extractRequestMeta(req);
 
-    const existing = await this.users.findByEmail(email);
+    const existing = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
 
     if (existing) {
       await this.authAudit.log({
@@ -104,12 +106,12 @@ export class AuthService {
 
     const verificationCode = await this.createEmailVerificationCode(
       user.id,
-      user.email
+      user.email!
     );
 
     try {
       await this.emailService.sendVerificationCodeEmail({
-        to: user.email,
+        to: user.email!,
         fullName: user.fullName,
         code: verificationCode,
       });
@@ -117,12 +119,13 @@ export class AuthService {
       console.error("Failed to send verification email:", error);
     }
 
+    const context = await this.resolveActiveMembershipContext(user.id);
+
     const session = await this.sessionTokens.issueSession({
       userId: user.id,
-      schoolId: null,
-      programId: null,
-      role: null,
-      membershipId: null,
+      institutionId: context.institutionId,
+      membershipId: context.membershipId,
+      membershipType: context.membershipType,
       ipAddress,
       userAgent,
     });
@@ -141,7 +144,7 @@ export class AuthService {
       requiresEmailVerification: true,
       emailVerified: false,
       phoneVerified: !!user.phoneVerifiedAt,
-      user,
+      user: this.toPublicUser(user),
       session,
     };
   }
@@ -158,7 +161,6 @@ export class AuthService {
           { email: loweredIdentifier },
           { skuullyId: loweredIdentifier },
           ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
-          { phone: loweredIdentifier },
         ],
       },
       select: {
@@ -183,6 +185,7 @@ export class AuthService {
     if (!user) {
       await this.authAudit.log({
         email: loweredIdentifier,
+        phone: normalizedPhone,
         event: "login_failed",
         ipAddress,
         userAgent,
@@ -201,6 +204,7 @@ export class AuthService {
       await this.authAudit.log({
         userId: user.id,
         email: user.email,
+        phone: user.phone,
         event: "login_failed",
         ipAddress,
         userAgent,
@@ -221,6 +225,7 @@ export class AuthService {
       await this.authAudit.log({
         userId: user.id,
         email: user.email,
+        phone: user.phone,
         event: "login_failed",
         ipAddress,
         userAgent,
@@ -231,27 +236,13 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const latestMembership = await this.prisma.schoolMembership.findFirst({
-      where: {
-        userId: user.id,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      select: {
-        id: true,
-        membershipType: true,
-        schoolId: true,
-      },
-    });
+    const context = await this.resolveActiveMembershipContext(user.id);
 
     const session = await this.sessionTokens.issueSession({
       userId: user.id,
-      schoolId: latestMembership?.schoolId ?? null,
-      programId: null,
-      role: latestMembership?.membershipType ?? null,
-      membershipId: latestMembership?.id ?? null,
+      institutionId: context.institutionId,
+      membershipId: context.membershipId,
+      membershipType: context.membershipType,
       ipAddress,
       userAgent,
     });
@@ -259,6 +250,7 @@ export class AuthService {
     await this.authAudit.log({
       userId: user.id,
       email: user.email,
+      phone: user.phone,
       event: "login_success",
       ipAddress,
       userAgent,
@@ -267,6 +259,9 @@ export class AuthService {
         loginIdentifier: rawIdentifier,
         emailVerified: !!user.emailVerifiedAt,
         phoneVerified: !!user.phoneVerifiedAt,
+        institutionId: context.institutionId,
+        membershipId: context.membershipId,
+        membershipType: context.membershipType,
       },
     });
 
@@ -274,15 +269,7 @@ export class AuthService {
       requiresEmailVerification: !user.emailVerifiedAt,
       emailVerified: !!user.emailVerifiedAt,
       phoneVerified: !!user.phoneVerifiedAt,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        skuullyId: user.skuullyId,
-      },
+      user: this.toPublicUser(user),
       session,
     };
   }
@@ -343,7 +330,6 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
-        firstName: true,
         emailVerifiedAt: true,
       },
     });
@@ -382,6 +368,10 @@ export class AuthService {
       orderBy: {
         createdAt: "desc",
       },
+      select: {
+        id: true,
+        code: true,
+      },
     });
 
     if (!record) {
@@ -398,9 +388,39 @@ export class AuthService {
       throw new BadRequestException("Invalid or expired verification code");
     }
 
+    const codeMatches = timingSafeEqual(
+      Buffer.from(record.code),
+      Buffer.from(code)
+    );
+
+    if (!codeMatches) {
+      await this.authAudit.log({
+        userId: user.id,
+        email: user.email,
+        event: "verify_email_failed",
+        ipAddress,
+        userAgent,
+        success: false,
+        reason: "invalid_code_compare",
+      });
+
+      throw new BadRequestException("Invalid or expired verification code");
+    }
+
     await this.prisma.$transaction([
       this.prisma.emailVerificationCode.update({
         where: { id: record.id },
+        data: {
+          usedAt: new Date(),
+        },
+      }),
+      this.prisma.emailVerificationCode.updateMany({
+        where: {
+          userId: user.id,
+          email,
+          usedAt: null,
+          id: { not: record.id },
+        },
         data: {
           usedAt: new Date(),
         },
@@ -415,7 +435,7 @@ export class AuthService {
 
     try {
       await this.emailService.sendWelcomeEmail({
-        to: user.email,
+        to: user.email!,
         fullName: user.fullName,
       });
     } catch (error) {
@@ -447,7 +467,6 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
-        firstName: true,
         emailVerifiedAt: true,
       },
     });
@@ -476,12 +495,12 @@ export class AuthService {
 
     const verificationCode = await this.createEmailVerificationCode(
       user.id,
-      user.email
+      user.email!
     );
 
     try {
       await this.emailService.sendVerificationCodeEmail({
-        to: user.email,
+        to: user.email!,
         fullName: user.fullName,
         code: verificationCode,
       });
@@ -514,7 +533,6 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
-        firstName: true,
         passwordHash: true,
       },
     });
@@ -564,12 +582,12 @@ export class AuthService {
       }),
     ]);
 
-    const appUrl = process.env.APP_URL?.trim() || "http://localhost:3000";
+    const appUrl = this.config.get<string>("APP_URL")?.trim() || "http://localhost:3000";
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
     try {
       await this.emailService.sendPasswordResetEmail({
-        to: user.email,
+        to: user.email!,
         fullName: user.fullName,
         resetUrl,
       });
@@ -604,7 +622,6 @@ export class AuthService {
             id: true,
             email: true,
             fullName: true,
-            firstName: true,
             passwordHash: true,
           },
         },
@@ -675,11 +692,20 @@ export class AuthService {
           usedAt: new Date(),
         },
       }),
+      this.prisma.refreshSession.updateMany({
+        where: {
+          userId: record.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      }),
     ]);
 
     try {
       await this.emailService.sendPasswordChangedEmail({
-        to: record.user.email,
+        to: record.user.email!,
         fullName: record.user.fullName,
       });
     } catch (error) {
@@ -696,7 +722,7 @@ export class AuthService {
     });
 
     return {
-      message: "Password updated successfully",
+      message: "Password updated successfully. Please sign in again.",
     };
   }
 
@@ -777,19 +803,33 @@ export class AuthService {
           },
         },
         memberships: {
-          where: { status: "ACTIVE" },
-          orderBy: { createdAt: "desc" },
+          where: { status: MembershipStatus.ACTIVE },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
           select: {
             id: true,
             membershipType: true,
             status: true,
             isPrimary: true,
             createdAt: true,
-            school: {
+            institution: {
               select: {
                 id: true,
                 name: true,
-                country: true,
+                institutionType: true,
+                institutionCategory: true,
+                countryCode: true,
+              },
+            },
+            assignedRoles: {
+              select: {
+                role: {
+                  select: {
+                    id: true,
+                    key: true,
+                    name: true,
+                    scope: true,
+                  },
+                },
               },
             },
           },
@@ -806,6 +846,10 @@ export class AuthService {
       providers: user.authProviderAccounts.map((item) => item.provider),
       emailVerified: !!user.emailVerifiedAt,
       phoneVerified: !!user.phoneVerifiedAt,
+      memberships: user.memberships.map((membership) => ({
+        ...membership,
+        roles: membership.assignedRoles.map((item) => item.role),
+      })),
     };
   }
 
@@ -825,13 +869,15 @@ export class AuthService {
   ) {
     const email = input.email.trim().toLowerCase();
 
-    if (!email) {
-      throw new BadRequestException("A verified email is required");
+    if (!email || !input.emailVerified) {
+      throw new UnauthorizedException(
+        "A verified provider email is required"
+      );
     }
 
     const providerAccount = await this.prisma.authProviderAccount.findUnique({
       where: {
-        unique_provider_provider_user: {
+        unique_provider_providerUserId: {
           provider: input.provider,
           providerUserId: input.providerUserId,
         },
@@ -906,26 +952,25 @@ export class AuthService {
             (input.emailVerified ? new Date() : null),
         };
       } else {
-        const { firstName, lastName } = this.splitName(
-          this.normalizeFullName(input.fullName)
-        );
+        const normalizedFullName = this.normalizeFullName(input.fullName);
+        const { firstName, lastName } = this.splitName(normalizedFullName);
 
         user = await this.prisma.user.create({
           data: {
-            fullName: this.normalizeFullName(input.fullName),
+            fullName: normalizedFullName,
             firstName,
             lastName,
             email,
             passwordHash: null,
             avatarUrl: input.avatarUrl,
-            emailVerifiedAt: input.emailVerified ? new Date() : null,
+            emailVerifiedAt: new Date(),
             preferredLoginMethod:
               input.provider === AuthProvider.GOOGLE
                 ? LoginMethod.GOOGLE
                 : LoginMethod.APPLE,
             skuullyId: await this.generateUniqueSkuullyId(
               this.prisma,
-              input.fullName
+              normalizedFullName
             ),
             authProviderAccounts: {
               create: {
@@ -952,27 +997,13 @@ export class AuthService {
       }
     }
 
-    const latestMembership = await this.prisma.schoolMembership.findFirst({
-      where: {
-        userId: user.id,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      select: {
-        id: true,
-        membershipType: true,
-        schoolId: true,
-      },
-    });
+    const context = await this.resolveActiveMembershipContext(user.id);
 
     const session = await this.sessionTokens.issueSession({
       userId: user.id,
-      schoolId: latestMembership?.schoolId ?? null,
-      programId: null,
-      role: latestMembership?.membershipType ?? null,
-      membershipId: latestMembership?.id ?? null,
+      institutionId: context.institutionId,
+      membershipId: context.membershipId,
+      membershipType: context.membershipType,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
@@ -980,6 +1011,7 @@ export class AuthService {
     await this.authAudit.log({
       userId: user.id,
       email: user.email,
+      phone: user.phone,
       event:
         input.provider === AuthProvider.GOOGLE
           ? "google_login_success"
@@ -991,6 +1023,9 @@ export class AuthService {
         provider: input.provider,
         linkedByEmail: !providerAccount,
         isNewUser,
+        institutionId: context.institutionId,
+        membershipId: context.membershipId,
+        membershipType: context.membershipType,
       },
     });
 
@@ -999,21 +1034,13 @@ export class AuthService {
       requiresEmailVerification: false,
       emailVerified: true,
       isNewUser,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        skuullyId: user.skuullyId,
-      },
+      user: this.toPublicUser(user),
       session,
     };
   }
 
   private async verifyGoogleIdToken(idToken: string) {
-    const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+    const clientId = this.config.get<string>("GOOGLE_CLIENT_ID")?.trim();
 
     if (!clientId) {
       throw new BadRequestException("GOOGLE_CLIENT_ID is not configured");
@@ -1045,7 +1072,7 @@ export class AuthService {
   }
 
   private async verifyAppleIdToken(idToken: string) {
-    const appleClientId = process.env.APPLE_CLIENT_ID?.trim();
+    const appleClientId = this.config.get<string>("APPLE_CLIENT_ID")?.trim();
 
     if (!appleClientId) {
       throw new BadRequestException("APPLE_CLIENT_ID is not configured");
@@ -1085,20 +1112,66 @@ export class AuthService {
   }
 
   private async createEmailVerificationCode(userId: string, email: string) {
-    const code = String(randomInt(100000, 1000000));
+    const code = String(randomInt(100000, 1_000_000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    await this.prisma.emailVerificationCode.create({
-      data: {
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationCode.updateMany({
+        where: {
+          userId,
+          email,
+          purpose: VerificationPurpose.EMAIL_VERIFY,
+          usedAt: null,
+        },
+        data: {
+          usedAt: new Date(),
+        },
+      }),
+      this.prisma.emailVerificationCode.create({
+        data: {
+          userId,
+          email,
+          code,
+          purpose: VerificationPurpose.EMAIL_VERIFY,
+          expiresAt,
+        },
+      }),
+    ]);
+
+    return code;
+  }
+
+  private async resolveActiveMembershipContext(userId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: {
         userId,
-        email,
-        code,
-        purpose: VerificationPurpose.EMAIL_VERIFY,
-        expiresAt,
+        status: MembershipStatus.ACTIVE,
+      },
+      orderBy: [{ isPrimary: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        institutionId: true,
+        membershipType: true,
       },
     });
 
-    return code;
+    return {
+      institutionId: membership?.institutionId ?? null,
+      membershipId: membership?.id ?? null,
+      membershipType: membership?.membershipType ?? null,
+    };
+  }
+
+  private toPublicUser(user: SafeUser) {
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      skuullyId: user.skuullyId,
+    };
   }
 
   private hashToken(value: string) {
@@ -1130,7 +1203,7 @@ export class AuthService {
     }
 
     const digits = raw.replace(/\D/g, "");
-    return digits || null;
+    return digits ? `+${digits}` : null;
   }
 
   private normalizeFullName(value: string) {
@@ -1182,7 +1255,7 @@ export class AuthService {
         .replace(/\.+/g, ".")
         .replace(/^\.|\.$/g, "") || "user";
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       const suffix = randomBytes(2).toString("hex");
       const candidate = `${base}.${suffix}`;
 
